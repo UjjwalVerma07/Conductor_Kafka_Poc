@@ -1,0 +1,83 @@
+{
+  "name": "multi_stage_pipeline",
+  "description": "3-stage data validation and enrichment pipeline: Email Validation -> Phone Validation -> Enrichment",
+  "version": 2,
+  "tasks": [
+    {
+      "name": "publish_file_request",
+      "taskReferenceName": "publish_email_validation_ref",
+      "type": "SIMPLE",
+      "inputParameters": {
+        "stage": 1,
+        "input_bucket": "${workflow.input.input_bucket}",
+        "input_key": "${workflow.input.input_key}",
+        "output_bucket": "intermediate-data",
+        "output_key": "stage1-email-validated.json"
+      }
+    },
+    {
+      "name": "wait_for_file_result",
+      "taskReferenceName": "wait_email_validation_ref",
+      "type": "SIMPLE",
+      "inputParameters": {
+        "stage": 1,
+        "result_topic": "file-results-service1"
+      }
+    },
+    {
+      "name": "publish_file_request",
+      "taskReferenceName": "publish_phone_validation_ref",
+      "type": "SIMPLE",
+      "inputParameters": {
+        "stage": 2,
+        "input_bucket": "${wait_email_validation_ref.output.output_bucket}",
+        "input_key": "${wait_email_validation_ref.output.output_key}",
+        "output_bucket": "intermediate-data",
+        "output_key": "stage2-phone-validated.json"
+      }
+    },
+    {
+      "name": "wait_for_file_result",
+      "taskReferenceName": "wait_phone_validation_ref",
+      "type": "SIMPLE",
+      "inputParameters": {
+        "stage": 2,
+        "result_topic": "file-results-service2"
+      }
+    },
+    {
+      "name": "publish_file_request",
+      "taskReferenceName": "publish_enrichment_ref",
+      "type": "SIMPLE",
+      "inputParameters": {
+        "stage": 3,
+        "input_bucket": "${wait_phone_validation_ref.output.output_bucket}",
+        "input_key": "${wait_phone_validation_ref.output.output_key}",
+        "output_bucket": "output-data",
+        "output_key": "final-enriched.json"
+      }
+    },
+    {
+      "name": "wait_for_file_result",
+      "taskReferenceName": "wait_enrichment_ref",
+      "type": "SIMPLE",
+      "inputParameters": {
+        "stage": 3,
+        "result_topic": "file-results-service3"
+      }
+    }
+  ],
+  "outputParameters": {
+    "stage1_output": "${wait_email_validation_ref.output}",
+    "stage2_output": "${wait_phone_validation_ref.output}",
+    "stage3_output": "${wait_enrichment_ref.output}",
+    "final_output_bucket": "${wait_enrichment_ref.output.output_bucket}",
+    "final_output_key": "${wait_enrichment_ref.output.output_key}"
+  },
+  "schemaVersion": 2,
+  "restartable": true,
+  "ownerEmail": "pipeline@example.com",
+  "timeoutPolicy": "ALERT_ONLY",
+  "timeoutSeconds": 0
+}
+

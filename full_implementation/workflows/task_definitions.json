@@ -1,0 +1,49 @@
+[
+  {
+    "name": "publish_file_request",
+    "description": "Publishes file processing request to Kafka topic",
+    "retryCount": 3,
+    "retryLogic": "FIXED",
+    "retryDelaySeconds": 10,
+    "timeoutSeconds": 60,
+    "timeoutPolicy": "TIME_OUT_WF",
+    "responseTimeoutSeconds": 30,
+    "ownerEmail": "pipeline@example.com",
+    "inputKeys": [
+      "stage",
+      "input_bucket",
+      "input_key",
+      "output_bucket",
+      "output_key"
+    ],
+    "outputKeys": [
+      "published",
+      "stage",
+      "message"
+    ]
+  },
+  {
+    "name": "wait_for_file_result",
+    "description": "Waits for file processing result from Kafka topic",
+    "retryCount": 60,
+    "retryLogic": "FIXED",
+    "retryDelaySeconds": 5,
+    "timeoutSeconds": 600,
+    "timeoutPolicy": "TIME_OUT_WF",
+    "responseTimeoutSeconds": 10,
+    "pollTimeoutSeconds": 10,
+    "ownerEmail": "pipeline@example.com",
+    "inputKeys": [
+      "stage",
+      "result_topic"
+    ],
+    "outputKeys": [
+      "stage",
+      "status",
+      "output_bucket",
+      "output_key",
+      "processing_stats"
+    ]
+  }
+]
+
