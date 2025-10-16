@@ -1,0 +1,4 @@
+kafka-python==2.0.2
+minio==7.2.3
+phonenumbers==8.13.26
+
