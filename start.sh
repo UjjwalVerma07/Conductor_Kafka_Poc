@@ -50,3 +50,4 @@ echo "  3. Stop services:   docker-compose down"
 echo ""
 
 
+

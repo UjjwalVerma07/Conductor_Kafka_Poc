@@ -82,7 +82,7 @@
   },
   "schemaVersion": 2,
   "restartable": true,
-  "ownerEmail": "pipeline@example.com",
+  "ownerEmail": "ujjwalvarma6948@gmail.com",
   "timeoutPolicy": "ALERT_ONLY",
   "timeoutSeconds": 0
 }

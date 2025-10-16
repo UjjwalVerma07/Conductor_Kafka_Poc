@@ -22,7 +22,9 @@ def validate_emails(email):
 
 def process_csv_data(csv_content):
     logger.info("Processing CSV data")
+    #String IO allows the CSV string to be treated as a file object (so you can use it with the csv module)
     csv_file = StringIO(csv_content)
+    #DictReader create a reader object that maps each row as a dictionary (key-value pairs) based on the header row
     reader = csv.DictReader(csv_file)
 
     results = []
@@ -47,7 +49,7 @@ def process_csv_data(csv_content):
                 seen_emails.add(email.lower())
         else:
             stats['invalid_emails'] += 1
-        
+        #Create a new dictionary from the original row and add the additional fields
         result_row = dict(row)
         result_row['email_valid'] = is_valid
         result_row['email_duplicate'] = is_duplicate

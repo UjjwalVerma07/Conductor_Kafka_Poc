@@ -8,7 +8,7 @@
     "timeoutSeconds": 60,
     "timeoutPolicy": "TIME_OUT_WF",
     "responseTimeoutSeconds": 30,
-    "ownerEmail": "pipeline@example.com",
+    "ownerEmail": "ujjwalvarma6948@gmail.com",
     "inputKeys": [
       "stage",
       "input_bucket",
@@ -29,7 +29,7 @@
     "timeoutSeconds": 300,
     "timeoutPolicy": "TIME_OUT_WF",
     "responseTimeoutSeconds": 300,
-    "ownerEmail": "pipeline@example.com",
+    "ownerEmail": "ujjwalvarma6948@gmail.com",
     "inputKeys": [
       "input_bucket",
       "input_key",
@@ -52,7 +52,7 @@
     "timeoutSeconds": 300,
     "timeoutPolicy": "TIME_OUT_WF",
     "responseTimeoutSeconds": 300,
-    "ownerEmail": "pipeline@example.com",
+    "ownerEmail": "ujjwalvarma6948@gmail.com",
     "inputKeys": [
       "input_bucket",
       "input_key",
@@ -75,7 +75,7 @@
     "timeoutSeconds": 300,
     "timeoutPolicy": "TIME_OUT_WF",
     "responseTimeoutSeconds": 300,
-    "ownerEmail": "pipeline@example.com",
+    "ownerEmail": "ujjwalvarma6948@gmail.com",
     "inputKeys": [
       "input_bucket",
       "input_key",
@@ -101,7 +101,7 @@
     "timeoutPolicy": "TIME_OUT_WF",
     "responseTimeoutSeconds": 10,
     "pollTimeoutSeconds": 10,
-    "ownerEmail": "pipeline@example.com",
+    "ownerEmail": "ujjwalvarma6948@gmail.com",
     "inputKeys": [
       "stage",
       "result_topic"

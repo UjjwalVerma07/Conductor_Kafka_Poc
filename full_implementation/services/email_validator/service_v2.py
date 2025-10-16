@@ -75,6 +75,7 @@ def upload_to_minio(bucket, key, content):
         
         # Upload content
         content_bytes = content.encode('utf-8') if isinstance(content, str) else content
+        #BytesIO is a file-like object that can be used to read and write bytes data in a memory buffer(like file in a memory)
         content_stream = BytesIO(content_bytes)
         
         minio_client.put_object(
