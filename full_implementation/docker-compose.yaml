@@ -150,6 +150,7 @@ services:
       - MINIO_SECURE=false
       - SERVICE_NAME=email-validator
       - STAGE=1
+      - CONDUCTOR_SERVER_URL=http://conductor-server:8080/api
     networks:
       - pipeline-net
     restart: unless-stopped
@@ -171,6 +172,7 @@ services:
       - MINIO_SECURE=false
       - SERVICE_NAME=phone-validator
       - STAGE=2
+      - CONDUCTOR_SERVER_URL=http://conductor-server:8080/api
     networks:
       - pipeline-net
     restart: unless-stopped
@@ -192,6 +194,21 @@ services:
       - MINIO_SECURE=false
       - SERVICE_NAME=enricher
       - STAGE=3
+      - CONDUCTOR_SERVER_URL=http://conductor-server:8080/api
+    networks:
+      - pipeline-net
+    restart: unless-stopped
+
+  # Processing Task Worker (for visible tasks)
+  processing-task-worker:
+    build: ./worker
+    container_name: processing-task-worker
+    command: python -u processing_task_worker.py
+    depends_on:
+      conductor-server:
+        condition: service_healthy
+    environment:
+      - CONDUCTOR_SERVER_URL=http://conductor-server:8080/api
     networks:
       - pipeline-net
     restart: unless-stopped

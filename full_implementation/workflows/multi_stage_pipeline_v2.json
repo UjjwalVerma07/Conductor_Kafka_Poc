@@ -1,0 +1,89 @@
+{
+  "name": "multi_stage_pipeline_visible",
+  "description": "3-stage pipeline with visible processing tasks in Conductor UI",
+  "version": 1,
+  "tasks": [
+    {
+      "name": "publish_file_request",
+      "taskReferenceName": "publish_email_validation_ref",
+      "type": "SIMPLE",
+      "inputParameters": {
+        "stage": 1,
+        "input_bucket": "${workflow.input.input_bucket}",
+        "input_key": "${workflow.input.input_key}",
+        "output_bucket": "intermediate-data",
+        "output_key": "stage1-email-validated.json"
+      }
+    },
+    {
+      "name": "email_validation",
+      "taskReferenceName": "email_validation_processing",
+      "type": "SIMPLE",
+      "inputParameters": {
+        "input_bucket": "${workflow.input.input_bucket}",
+        "input_key": "${workflow.input.input_key}",
+        "output_bucket": "intermediate-data",
+        "output_key": "stage1-email-validated.json"
+      }
+    },
+    {
+      "name": "publish_file_request",
+      "taskReferenceName": "publish_phone_validation_ref",
+      "type": "SIMPLE",
+      "inputParameters": {
+        "stage": 2,
+        "input_bucket": "${email_validation_processing.output.output_bucket}",
+        "input_key": "${email_validation_processing.output.output_key}",
+        "output_bucket": "intermediate-data",
+        "output_key": "stage2-phone-validated.json"
+      }
+    },
+    {
+      "name": "phone_validation",
+      "taskReferenceName": "phone_validation_processing",
+      "type": "SIMPLE",
+      "inputParameters": {
+        "input_bucket": "${email_validation_processing.output.output_bucket}",
+        "input_key": "${email_validation_processing.output.output_key}",
+        "output_bucket": "intermediate-data",
+        "output_key": "stage2-phone-validated.json"
+      }
+    },
+    {
+      "name": "publish_file_request",
+      "taskReferenceName": "publish_enrichment_ref",
+      "type": "SIMPLE",
+      "inputParameters": {
+        "stage": 3,
+        "input_bucket": "${phone_validation_processing.output.output_bucket}",
+        "input_key": "${phone_validation_processing.output.output_key}",
+        "output_bucket": "output-data",
+        "output_key": "final-enriched.json"
+      }
+    },
+    {
+      "name": "enrichment",
+      "taskReferenceName": "enrichment_processing",
+      "type": "SIMPLE",
+      "inputParameters": {
+        "input_bucket": "${phone_validation_processing.output.output_bucket}",
+        "input_key": "${phone_validation_processing.output.output_key}",
+        "output_bucket": "output-data",
+        "output_key": "final-enriched.json"
+      }
+    }
+  ],
+  "outputParameters": {
+    "email_validation_stats": "${email_validation_processing.output.processing_stats}",
+    "phone_validation_stats": "${phone_validation_processing.output.processing_stats}",
+    "enrichment_stats": "${enrichment_processing.output.processing_stats}",
+    "final_output_bucket": "${enrichment_processing.output.output_bucket}",
+    "final_output_key": "${enrichment_processing.output.output_key}"
+  },
+  "schemaVersion": 2,
+  "restartable": true,
+  "ownerEmail": "pipeline@example.com",
+  "timeoutPolicy": "ALERT_ONLY",
+  "timeoutSeconds": 0
+}
+
