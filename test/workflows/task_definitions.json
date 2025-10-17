@@ -1,0 +1,25 @@
+[
+  {
+    "name": "validate_email",
+    "description": "Validates email addresses using regex patterns",
+    "retryCount": 3,
+    "timeoutSeconds": 300,
+    "responseTimeoutSeconds": 180,
+    "retryLogic": "FIXED",
+    "retryDelaySeconds": 60,
+    "timeoutPolicy": "TIME_OUT_WF",
+    "ownerEmail": "team@example.com"
+  },
+  {
+    "name": "enrich_data",
+    "description": "Enriches validated data with additional information",
+    "retryCount": 3,
+    "timeoutSeconds": 300,
+    "responseTimeoutSeconds": 180,
+    "retryLogic": "FIXED",
+    "retryDelaySeconds": 60,
+    "timeoutPolicy": "TIME_OUT_WF",
+    "ownerEmail": "team@example.com"
+  }
+]
+

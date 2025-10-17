@@ -1,0 +1,42 @@
+{
+  "name": "email_processing_workflow",
+  "description": "Two-stage workflow: validate email then enrich data (Kafka-backed)",
+  "version": 1,
+  "tasks": [
+    {
+      "name": "validate_email",
+      "taskReferenceName": "validate_email_ref",
+      "inputParameters": {
+        "email": "${workflow.input.email}"
+      },
+      "type": "SIMPLE",
+      "startDelay": 0,
+      "optional": false
+    },
+    {
+      "name": "enrich_data",
+      "taskReferenceName": "enrich_data_ref",
+      "inputParameters": {
+        "email": "${validate_email_ref.output.email}",
+        "is_valid": "${validate_email_ref.output.is_valid}",
+        "validation_time": "${validate_email_ref.output.validation_time}"
+      },
+      "type": "SIMPLE",
+      "startDelay": 0,
+      "optional": false
+    }
+  ],
+  "outputParameters": {
+    "email": "${enrich_data_ref.output.email}",
+    "is_valid": "${enrich_data_ref.output.is_valid}",
+    "domain": "${enrich_data_ref.output.domain}",
+    "enrichment": "${enrich_data_ref.output.enrichment}",
+    "workflow_completed_at": "${workflow.endTime}"
+  },
+  "schemaVersion": 2,
+  "restartable": true,
+  "ownerEmail": "team@example.com",
+  "timeoutPolicy": "ALERT_ONLY",
+  "timeoutSeconds": 600
+}
+
