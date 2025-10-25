@@ -45,7 +45,7 @@ def service1_processor():
         bootstrap_servers=KAFKA_BOOTSTRAP,
         value_deserializer=lambda m: json.loads(m.decode('utf-8')),
         auto_offset_reset='latest',
-        group_id='service1-group'
+        group_id='service1-group' 
     )
     
     producer = create_producer()

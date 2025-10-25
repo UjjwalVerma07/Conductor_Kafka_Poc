@@ -132,7 +132,7 @@ def update_conductor_task(workflow_id, task_ref_name, status, output_data):
         response = requests.post(update_url, json=update_payload)
         
         if response.status_code == 200:
-            logger.info(f"✅ Updated Conductor task {task_ref_name}: {status}")
+            logger.info(f"Updated Conductor task {task_ref_name}: {status}")
         else:
             logger.warning(f"Failed to update task: {response.status_code} - {response.text}")
             
@@ -165,10 +165,10 @@ def process_message(message_data):
         result_json = json.dumps(result, indent=2)
         upload_to_minio(output_bucket, output_key, result_json)
         
-        # Update Conductor: Processing completed ✅
+        # Update Conductor: Processing completed 
         update_conductor_task(
             workflow_id,
-            'email_validation_processing',
+            'email_validation_processing', #task reference name in the workflow
             'COMPLETED',
             {
                 'status': 'success',
@@ -195,13 +195,13 @@ def process_message(message_data):
         kafka_producer.flush()
         
         logger.info(f"Published result to {result_topic}")
-        logger.info(f"✅ Updated Conductor task to COMPLETED")
+        logger.info(f"Updated Conductor task to COMPLETED")
         logger.info(f"Completed workflow {workflow_id}")
         
     except Exception as e:
         logger.error(f"Error processing message: {e}", exc_info=True)
         
-        # Update Conductor: Processing failed ❌
+        # Update Conductor: Processing failed 
         if workflow_id:
             update_conductor_task(
                 workflow_id,
@@ -245,6 +245,7 @@ def main():
             logger.info(f"Received message: stage={data.get('stage')}")
             
             # Filter by stage
+            #This is where we decide if we need to run the particular microservice or not 
             if data.get('stage') == STAGE:
                 logger.info(f"Processing message for stage {STAGE}")
                 process_message(data)

@@ -1,4 +1,0 @@
-# Requirements for Kafka event consumer
-kafka-python>=2.0.2
-requests>=2.31.0
-

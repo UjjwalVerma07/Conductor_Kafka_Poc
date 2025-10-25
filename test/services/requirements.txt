@@ -1,3 +1,0 @@
-# Requirements for Kafka-backed Conductor microservices
-requests>=2.31.0
-

@@ -65,6 +65,7 @@ class ProcessingTaskWorker:
             }
             
             # Return IN_PROGRESS - external service will complete it
+            #This tell that if the task has been not updated by the external service in 5 minutes,then poll again to recheck its status
             task_result.callback_after_seconds = 300  # Check again in 5 minutes if not completed
             
             logger.info(f"[{self.task_name}] Marked as IN_PROGRESS, waiting for external service")
