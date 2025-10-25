@@ -1,3 +1,0 @@
-conductor-python==1.0.58
-kafka-python==2.0.2
-
