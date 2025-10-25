@@ -1,0 +1,41 @@
+{
+  "name": "event_driven_pipeline",
+  "description": "Event-driven pipeline with ConductorEventPublisher",
+  "version": 1,
+  "tasks": [
+    {
+      "name": "email_validation",
+      "taskReferenceName": "email_validation_task",
+      "type": "SIMPLE",
+      "inputParameters": {
+        "input": "${workflow.input}"
+      }
+    },
+    {
+      "name": "phone_validation",
+      "taskReferenceName": "phone_validation_task",
+      "type": "SIMPLE",
+      "inputParameters": {
+        "input": "${email_validation_task.output}"
+      }
+    },
+    {
+      "name": "enrichment",
+      "taskReferenceName": "enrichment_task",
+      "type": "SIMPLE",
+      "inputParameters": {
+        "input": "${phone_validation_task.output}"
+      }
+    }
+  ],
+  "outputParameters": {
+    "email_validation_result": "${email_validation_task.output}",
+    "phone_validation_result": "${phone_validation_task.output}",
+    "enrichment_result": "${enrichment_task.output}"
+  },
+  "schemaVersion": 2,
+  "restartable": true,
+  "ownerEmail": "test@example.com",
+  "timeoutPolicy": "ALERT_ONLY",
+  "timeoutSeconds": 0
+}
