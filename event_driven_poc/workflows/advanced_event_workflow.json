@@ -1,0 +1,119 @@
+{
+  "name": "advanced_event_workflow",
+  "description": "Advanced event-driven workflow with conditional processing",
+  "version": 1,
+  "tasks": [
+    {
+      "name": "start_validation_process",
+      "taskReferenceName": "start_validation_process",
+      "type": "KAFKA_PUBLISH",
+      "inputParameters": {
+        "kafka_request": {
+          "topic": "conductor-events",
+          "bootStrapServers": "kafka:9092",
+          "value": "Starting validation process - workflow: ${workflow.workflowId}",
+          "key": "validation-start-${workflow.instanceId}"
+        }
+      }
+    },
+    {
+      "name": "wait_for_validation_events",
+      "taskReferenceName": "wait_for_validation_events",
+      "type": "EVENT",
+      "inputParameters": {
+        "sink": "conductor-events",
+        "event": "validation_completed"
+      }
+    },
+    {
+      "name": "check_validation_results",
+      "taskReferenceName": "check_validation_results",
+      "type": "SWITCH",
+      "inputParameters": {
+        "validation_status": "${wait_for_validation_events.output.status}",
+        "evaluatorType": "value-param",
+        "expression": "validation_status"
+      },
+      "decisionCases": {
+        "SUCCESS": [
+          {
+            "name": "process_success",
+            "taskReferenceName": "process_success",
+            "type": "KAFKA_PUBLISH",
+            "inputParameters": {
+              "kafka_request": {
+                "topic": "conductor-events",
+                "bootStrapServers": "kafka:9092",
+                "value": "Validation successful - proceeding with enrichment: ${wait_for_validation_events.output}",
+                "key": "success-processing-${workflow.instanceId}"
+              }
+            }
+          }
+        ],
+        "FAILED": [
+          {
+            "name": "handle_failure",
+            "taskReferenceName": "handle_failure",
+            "type": "KAFKA_PUBLISH",
+            "inputParameters": {
+              "kafka_request": {
+                "topic": "conductor-events",
+                "bootStrapServers": "kafka:9092",
+                "value": "Validation failed - handling error: ${wait_for_validation_events.output}",
+                "key": "failure-processing-${workflow.instanceId}"
+              }
+            }
+          }
+        ]
+      },
+      "defaultCase": [
+        {
+          "name": "handle_unknown",
+          "taskReferenceName": "handle_unknown",
+          "type": "KAFKA_PUBLISH",
+          "inputParameters": {
+            "kafka_request": {
+              "topic": "conductor-events",
+              "bootStrapServers": "kafka:9092",
+              "value": "Unknown validation status - investigating: ${wait_for_validation_events.output}",
+              "key": "unknown-processing-${workflow.instanceId}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait_for_enrichment_event",
+      "taskReferenceName": "wait_for_enrichment_event",
+      "type": "EVENT",
+      "inputParameters": {
+        "sink": "conductor-events",
+        "event": "enrichment_completed"
+      }
+    },
+    {
+      "name": "finalize_processing",
+      "taskReferenceName": "finalize_processing",
+      "type": "KAFKA_PUBLISH",
+      "inputParameters": {
+        "kafka_request": {
+          "topic": "conductor-events",
+          "bootStrapServers": "kafka:9092",
+          "value": "Workflow completed successfully - Final result: ${wait_for_enrichment_event.output}",
+          "key": "workflow-complete-${workflow.instanceId}"
+        }
+      }
+    }
+  ],
+  "inputParameters": [],
+  "outputParameters": {
+    "validation_result": "${wait_for_validation_events.output}",
+    "enrichment_result": "${wait_for_enrichment_event.output}",
+    "final_result": "${finalize_processing.output}"
+  },
+  "schemaVersion": 2,
+  "restartable": true,
+  "workflowStatusListenerEnabled": false,
+  "timeoutPolicy": "ALERT_ONLY",
+  "timeoutSeconds": 600
+}

@@ -1,0 +1,75 @@
+{
+  "name": "event_listener_workflow",
+  "description": "Workflow that listens for Kafka events and processes them",
+  "version": 1,
+  "tasks": [
+    {
+      "name": "wait_for_email_event",
+      "taskReferenceName": "wait_for_email_event",
+      "type": "EVENT",
+      "sink": "conductor-events",
+      "inputParameters": {
+        "event": "email_validation_completed"
+      }
+    },
+    {
+      "name": "process_email_result",
+      "taskReferenceName": "process_email_result",
+      "type": "KAFKA_PUBLISH",
+      "inputParameters": {
+        "kafka_request": {
+          "topic": "conductor-events",
+          "bootStrapServers": "kafka:9092",
+          "value": "Email validation completed - processing result: ${wait_for_email_event.output}",
+          "key": "email-processing-${workflow.instanceId}"
+        }
+      }
+    },
+    {
+      "name": "wait_for_phone_event",
+      "taskReferenceName": "wait_for_phone_event",
+      "type": "EVENT",
+      "sink": "conductor-events",
+      "inputParameters": {
+        "event": "phone_validation_completed"
+      }
+    },
+    {
+      "name": "process_phone_result",
+      "taskReferenceName": "process_phone_result",
+      "type": "KAFKA_PUBLISH",
+      "inputParameters": {
+        "kafka_request": {
+          "topic": "conductor-events",
+          "bootStrapServers": "kafka:9092",
+          "value": "Phone validation completed - processing result: ${wait_for_phone_event.output}",
+          "key": "phone-processing-${workflow.instanceId}"
+        }
+      }
+    },
+    {
+      "name": "final_processing",
+      "taskReferenceName": "final_processing",
+      "type": "KAFKA_PUBLISH",
+      "inputParameters": {
+        "kafka_request": {
+          "topic": "conductor-events",
+          "bootStrapServers": "kafka:9092",
+          "value": "All validations completed - Final processing done for workflow: ${workflow.workflowId}",
+          "key": "final-processing-${workflow.instanceId}"
+        }
+      }
+    }
+  ],
+  "inputParameters": [],
+  "outputParameters": {
+    "email_processing_result": "${process_email_result.output}",
+    "phone_processing_result": "${process_phone_result.output}",
+    "final_result": "${final_processing.output}"
+  },
+  "schemaVersion": 2,
+  "restartable": true,
+  "workflowStatusListenerEnabled": false,
+  "timeoutPolicy": "ALERT_ONLY",
+  "timeoutSeconds": 300
+}
