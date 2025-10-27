@@ -3,6 +3,7 @@
 Enhanced Sequential Event Router Service
 Bidirectional event routing: Conductor ↔ Microservices
 Routes events from Conductor to microservices and handles results back
+This is the main layer as it decouples the Conductor from microservices and handles the result back to the Conductor.
 """
 
 import os
@@ -47,7 +48,8 @@ RESULTS_ROUTING = {
 
 class EnhancedSequentialEventRouter:
     """Enhanced Event Router with bidirectional communication"""
-    
+
+    #This is the constructor for the EnhancedSequential Event Router.
     def __init__(self):
         self.kafka_producer = kafka_producer
         self.pipeline_state = {}  # Track pipeline state per workflow
@@ -86,6 +88,10 @@ class EnhancedSequentialEventRouter:
     
     def process_pipeline_event(self, event):
         """Process pipeline event and route to appropriate microservice"""
+
+        """So Pipeline State is basically a dictionary that tracks the state of the pipeline for each workflow. """
+
+
         try:
             event_type = event.get('eventType', 'unknown')
             workflow_id = event.get('workflowId', 'unknown')
@@ -96,6 +102,7 @@ class EnhancedSequentialEventRouter:
             logger.info(f"Pipeline stage: {pipeline_stage}")
             
             # Update pipeline state
+            #This is check if there exist a workflow in the pipeline state. If not, then it will create a new one
             if workflow_id not in self.pipeline_state:
                 self.pipeline_state[workflow_id] = {
                     'current_stage': 'start',
@@ -104,6 +111,7 @@ class EnhancedSequentialEventRouter:
                     'waiting_for': None
                 }
             
+            #Then it will route the event ot the appropriate micorservice based on the event type.
             # Route based on event type
             if event_type == 'pipeline_started':
                 self.route_to_email_validation(event)
@@ -121,6 +129,7 @@ class EnhancedSequentialEventRouter:
     
     def process_result_event(self, event, topic):
         """Process result event from microservice and notify Conductor"""
+        """ This event is sent from micorservice to the Event Router process it and send back to the Conductor  """
         try:
             workflow_id = event.get('workflowId', 'unknown')
             task_id = event.get('taskId', 'unknown')
@@ -130,12 +139,14 @@ class EnhancedSequentialEventRouter:
             logger.info(f"Processing result event: {event_type} for workflow: {workflow_id}, task: {task_id}")
             
             # Map result topic to completion event type
+            #This is the mapping of the result topic to the completion event type.
             completion_event_type = RESULTS_ROUTING.get(topic)
             if not completion_event_type:
                 logger.warning(f"No completion event mapping for topic: {topic}")
                 return
             
             # Create completion event for Conductor
+            #This is the completion event that is sent to conductor
             completion_event = {
                 'workflowId': workflow_id,
                 'taskId': task_id,
@@ -174,10 +185,12 @@ class EnhancedSequentialEventRouter:
     def route_to_email_validation(self, event):
         """Route to email validation stage"""
         try:
+            #This is the workflow id and data that is sent from the Conductor to the Event Router.
             workflow_id = event.get('workflowId')
             data = event.get('data', {})
             
             # Create email validation request
+            #This is the email validation request that is sent to the email validation microservice into the Kafka topic.
             email_request = {
                 'workflowId': workflow_id,
                 'taskId': 'email_validation_task',
@@ -206,10 +219,12 @@ class EnhancedSequentialEventRouter:
     def route_to_phone_validation(self, event):
         """Route to phone validation stage"""
         try:
+            #This is the workflow id and data that is sent from the Conductor to the Event Router
             workflow_id = event.get('workflowId')
             data = event.get('data', {})
             
             # Create phone validation request
+            #This is the phone validation request that is sent to the phone validation microservice into the Kafka topic.
             phone_request = {
                 'workflowId': workflow_id,
                 'taskId': 'phone_validation_task',
@@ -224,10 +239,12 @@ class EnhancedSequentialEventRouter:
             }
             
             # Send to phone validation topic
+            #This is the actual request that is sent in to the Kafka topic.
             self.kafka_producer.send('phone-validation-requests', phone_request)
             self.kafka_producer.flush()
             
             # Update pipeline state
+            #This is the update of the pipeline state for the workflow id.
             if workflow_id in self.pipeline_state:
                 self.pipeline_state[workflow_id]['waiting_for'] = 'phone_validation_completed'
             
@@ -235,14 +252,17 @@ class EnhancedSequentialEventRouter:
             
         except Exception as e:
             logger.error(f"❌ Error routing to phone validation: {e}")
+
     
     def route_to_enrichment(self, event):
         """Route to enrichment stage"""
         try:
+            #This is the workflow id and data that is sent from the Conductor to the Event Router.
             workflow_id = event.get('workflowId')
             data = event.get('data', {})
             
             # Create enrichment request
+            #This is the enrichment request that is sent to the enrichment microservice to the Kafka topic.
             enrichment_request = {
                 'workflowId': workflow_id,
                 'taskId': 'enrichment_task',
@@ -271,11 +291,13 @@ class EnhancedSequentialEventRouter:
     
     def route_to_completion(self, event):
         """Route to pipeline completion"""
+        #This is the workflow id and data that is sent from Conductor to the Event Router.
         try:
             workflow_id = event.get('workflowId')
             data = event.get('data', {})
             
             # Create completion event
+            #This is the completion event that is sent to the completion microservice to the Kafka topic.
             completion_event = {
                 'workflowId': workflow_id,
                 'taskId': 'pipeline_completion_task',
@@ -289,6 +311,7 @@ class EnhancedSequentialEventRouter:
             }
             
             # Send to completion topic
+            #This is the actual request that is sent into the Kafka topic.
             self.kafka_producer.send('pipeline-completion', completion_event)
             self.kafka_producer.flush()
             
@@ -351,6 +374,7 @@ class EnhancedSequentialEventRouter:
     
     def consume_result_events(self):
         """Consume result events from microservices and route them back to Conductor"""
+        """Here we are consuming the result events from microservices and routing them back to the Conductor.  """
         consumer = KafkaConsumer(
             'email-validation-results',
             'phone-validation-results', 
@@ -404,6 +428,8 @@ class EnhancedSequentialEventRouter:
     
     def start(self):
         """Start the enhanced event router with bidirectional communication"""
+        """The start() method is the main entry point that initializes and run Enhanced Sequential Event Router Service 
+        It sets up the bidirectional communication between the Conductor and microservices."""
         logger.info("Starting Enhanced Sequential Event Router Service")
         logger.info(f"Kafka: {KAFKA_BOOTSTRAP}")
         logger.info(f"Conductor API: {CONDUCTOR_API_URL}")
@@ -415,8 +441,12 @@ class EnhancedSequentialEventRouter:
         time.sleep(10)
         
         # Start both consumers in separate threads
+        # It Runs both the consumers in separate threads.
+        #Thread 1: Listens to the conductor-events topics for pipeline events
+        #Thread 2: Listens to the result topics for result events from microservices
         with ThreadPoolExecutor(max_workers=2) as executor:
             # Submit both consumer functions
+
             conductor_future = executor.submit(self.consume_conductor_events)
             results_future = executor.submit(self.consume_result_events)
             
