@@ -76,6 +76,15 @@ class EventRouter:
         for message in consumer:
             try:
                 event = message.value
+                
+                # Handle both string and dict formats
+                if isinstance(event, str):
+                    try:
+                        event = json.loads(event)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Received non-JSON string event: {event}")
+                        continue
+                
                 logger.info(f"Received conductor event: {event.get('eventType', 'unknown')}")
                 logger.info(f"Event data: {event.get('data', {})}")
                 

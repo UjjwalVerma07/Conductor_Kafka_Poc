@@ -1,0 +1,109 @@
+{
+  "name": "http_event_workflow",
+  "description": "Workflow that uses HTTP tasks to publish events via Conductor Event Publisher",
+  "version": 1,
+  "tasks": [
+    {
+      "name": "email_validation_event",
+      "taskReferenceName": "email_validation_event",
+      "type": "HTTP",
+      "inputParameters": {
+        "http_request": {
+          "uri": "http://conductor-event-publisher:5000/publish-event",
+          "method": "POST",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "eventId": "${workflow.instanceId}-email-${workflow.startTime}",
+            "eventType": "task.started",
+            "timestamp": "${workflow.startTime}",
+            "source": "conductor",
+            "data": {
+              "workflowId": "${workflow.workflowId}",
+              "taskId": "${email_validation_event.taskId}",
+              "taskType": "email_validation",
+              "status": "STARTED",
+              "input": {
+                "data": "test_email_data",
+                "records": 100
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "phone_validation_event",
+      "taskReferenceName": "phone_validation_event",
+      "type": "HTTP",
+      "inputParameters": {
+        "http_request": {
+          "uri": "http://conductor-event-publisher:5000/publish-event",
+          "method": "POST",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "eventId": "${workflow.instanceId}-phone-${workflow.startTime}",
+            "eventType": "task.started",
+            "timestamp": "${workflow.startTime}",
+            "source": "conductor",
+            "data": {
+              "workflowId": "${workflow.workflowId}",
+              "taskId": "${phone_validation_event.taskId}",
+              "taskType": "phone_validation",
+              "status": "STARTED",
+              "input": {
+                "data": "test_phone_data",
+                "records": 100
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "enrichment_event",
+      "taskReferenceName": "enrichment_event",
+      "type": "HTTP",
+      "inputParameters": {
+        "http_request": {
+          "uri": "http://conductor-event-publisher:5000/publish-event",
+          "method": "POST",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "eventId": "${workflow.instanceId}-enrichment-${workflow.startTime}",
+            "eventType": "task.started",
+            "timestamp": "${workflow.startTime}",
+            "source": "conductor",
+            "data": {
+              "workflowId": "${workflow.workflowId}",
+              "taskId": "${enrichment_event.taskId}",
+              "taskType": "enrichment",
+              "status": "STARTED",
+              "input": {
+                "data": "test_enrichment_data",
+                "records": 100
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "inputParameters": [],
+  "outputParameters": {
+    "email_result": "${email_validation_event.output}",
+    "phone_result": "${phone_validation_event.output}",
+    "enrichment_result": "${enrichment_event.output}"
+  },
+  "schemaVersion": 2,
+  "restartable": true,
+  "workflowStatusListenerEnabled": false,
+  "timeoutPolicy": "ALERT_ONLY",
+  "timeoutSeconds": 0
+}
+

@@ -54,11 +54,22 @@ services:
 
   # Conductor Server
   conductor-server:
-    image: netflixoss/conductor:latest
+    image: conductoross/conductor-standalone:3.15.0
     container_name: conductor-server-event
     environment:
       - DB=memory
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - conductor.event-queues.kafka.enabled=true
+      - conductor.event-queues.kafka.bootstrap-servers=kafka:9092
+      - conductor.default-event-queue.type=kafka
+      - conductor.event-processor.enabled=true
+      - conductor.event-processor.kafka.enabled=true
+      - conductor.event-processor.kafka.bootstrap-servers=kafka:9092
+      - conductor.event-processor.kafka.topic=conductor-events
+      - spring.kafka.consumer.group-id=conductor-events
+      - logging.level.com.netflix.conductor.core.events=INFO
+      - logging.level.com.netflix.conductor.contribs.queue.kafka=INFO
+      - conductor.tasks.kafka.bootstrap-servers=kafka:9092
+      - spring.kafka.bootstrap-servers=kafka:9092
     ports:
       - "8080:8080"
     depends_on:
@@ -74,19 +85,7 @@ services:
       retries: 5
       start_period: 60s
 
-  # Conductor UI
-  conductor-ui:
-    image: netflixoss/conductor-ui:latest
-    container_name: conductor-ui-event
-    environment:
-      - SERVER_URL=http://conductor-server:8080/api/
-    ports:
-      - "5000:5000"
-    depends_on:
-      - conductor-server
-    networks:
-      - event-driven-net
-    restart: unless-stopped
+  # Note: Conductor UI is available at http://localhost:8080 (built into the server)
 
   # Conductor Event Publisher
   conductor-event-publisher:
