@@ -53,58 +53,67 @@ class EnricherService:
     def process_task_event(self, event):
         """Process task event and publish result"""
         try:
-            workflow_id = event['data']['workflowId']
-            task_id = event['data']['taskId']
-            input_data = event['data']['input']
+            workflow_id = event.get('workflowId')
+            task_id = event.get('taskId')
+            data = event.get('data', {})
+            input_data = data.get('inputData', 'phone_validated_data')
+            records = data.get('records', 90)
             
-            logger.info(f"Processing data enrichment for workflow {workflow_id}")
+            logger.info(f"Processing data enrichment for workflow {workflow_id}, task {task_id}")
+            logger.info(f"Input data: {input_data}, Records: {records}")
             
             # Simulate data enrichment
             result = self.enrich_data(input_data)
             
-            # Publish result event
+            # Calculate processed records (simulate some failures)
+            processed_records = int(records * 0.85)  # 85% success rate
+            failed_records = records - processed_records
+            
+            # Publish result event to enrichment-results topic
             result_event = {
-                "eventId": f"result_{int(time.time() * 1000)}",
-                "eventType": "task.completed",
-                "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                "source": SERVICE_NAME,
-                "version": "1.0",
+                "workflowId": workflow_id,
+                "taskId": task_id,
+                "eventType": "enrichment_completed",
                 "data": {
-                    "workflowId": workflow_id,
-                    "taskId": task_id,
-                    "taskType": "enrichment",
-                    "status": "COMPLETED",
-                    "result": result
+                    "result": "success",
+                    "processedRecords": processed_records,
+                    "failedRecords": failed_records,
+                    "outputData": "enriched_data",
+                    "pipelineStage": "enrichment",
+                    "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                    "enrichmentResult": result
                 }
             }
             
-            # Publish to task-updates topic
-            self.kafka_producer.send('task-updates', result_event)
+            # Publish to enrichment-results topic
+            self.kafka_producer.send('enrichment-results', result_event)
             self.kafka_producer.flush()
             
-            logger.info(f"Published result event for task {task_id}")
+            logger.info(f"✅ Published result event to enrichment-results for task {task_id}")
+            logger.info(f"Processed {processed_records} records, {failed_records} failed")
             
         except Exception as e:
             logger.error(f"Error processing task event: {e}", exc_info=True)
             
             # Publish failure event
             failure_event = {
-                "eventId": f"failure_{int(time.time() * 1000)}",
-                "eventType": "task.failed",
-                "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                "source": SERVICE_NAME,
-                "version": "1.0",
+                "workflowId": event.get('workflowId', 'unknown'),
+                "taskId": event.get('taskId', 'unknown'),
+                "eventType": "enrichment_completed",
                 "data": {
-                    "workflowId": event['data']['workflowId'],
-                    "taskId": event['data']['taskId'],
-                    "taskType": "enrichment",
-                    "status": "FAILED",
+                    "result": "failure",
+                    "processedRecords": 0,
+                    "failedRecords": event.get('data', {}).get('records', 0),
+                    "outputData": "enrichment_failed",
+                    "pipelineStage": "enrichment",
+                    "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ'),
                     "error": str(e)
                 }
             }
             
-            self.kafka_producer.send('task-updates', failure_event)
+            self.kafka_producer.send('enrichment-results', failure_event)
             self.kafka_producer.flush()
+            logger.error(f"❌ Published failure event to enrichment-results")
     
     def consume_task_events(self):
         """Consume task events from Kafka"""
@@ -123,10 +132,13 @@ class EnricherService:
                 event = message.value
                 logger.info(f"Received task event: {event['eventType']}")
                 
-                if event['eventType'] == 'task.started':
+                event_type = event.get('eventType', 'unknown')
+                logger.info(f"Received task event: {event_type}")
+                
+                if event_type == 'enrichment_request':
                     self.process_task_event(event)
                 else:
-                    logger.debug(f"Skipping event type: {event['eventType']}")
+                    logger.debug(f"Skipping event type: {event_type}")
                     
             except Exception as e:
                 logger.error(f"Error processing message: {e}", exc_info=True)

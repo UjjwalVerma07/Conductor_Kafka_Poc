@@ -53,58 +53,67 @@ class EmailValidatorService:
     def process_task_event(self, event):
         """Process task event and publish result"""
         try:
-            workflow_id = event['data']['workflowId']
-            task_id = event['data']['taskId']
-            input_data = event['data']['input']
+            workflow_id = event.get('workflowId')
+            task_id = event.get('taskId')
+            data = event.get('data', {})
+            input_data = data.get('inputData', 'raw_data')
+            records = data.get('records', 100)
             
-            logger.info(f"Processing email validation for workflow {workflow_id}")
+            logger.info(f"Processing email validation for workflow {workflow_id}, task {task_id}")
+            logger.info(f"Input data: {input_data}, Records: {records}")
             
             # Simulate email validation
             result = self.validate_emails(input_data)
             
-            # Publish result event
+            # Calculate processed records (simulate some failures)
+            processed_records = int(records * 0.95)  # 95% success rate
+            failed_records = records - processed_records
+            
+            # Publish result event to email-validation-results topic
             result_event = {
-                "eventId": f"result_{int(time.time() * 1000)}",
-                "eventType": "task.completed",
-                "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                "source": SERVICE_NAME,
-                "version": "1.0",
+                "workflowId": workflow_id,
+                "taskId": task_id,
+                "eventType": "email_validation_completed",
                 "data": {
-                    "workflowId": workflow_id,
-                    "taskId": task_id,
-                    "taskType": "email_validation",
-                    "status": "COMPLETED",
-                    "result": result
+                    "result": "success",
+                    "processedRecords": processed_records,
+                    "failedRecords": failed_records,
+                    "outputData": "email_validated_data",
+                    "pipelineStage": "email_validation",
+                    "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                    "validationResult": result
                 }
             }
             
-            # Publish to task-updates topic
-            self.kafka_producer.send('task-updates', result_event)
+            # Publish to email-validation-results topic
+            self.kafka_producer.send('email-validation-results', result_event)
             self.kafka_producer.flush()
             
-            logger.info(f"Published result event for task {task_id}")
+            logger.info(f"✅ Published result event to email-validation-results for task {task_id}")
+            logger.info(f"Processed {processed_records} records, {failed_records} failed")
             
         except Exception as e:
             logger.error(f"Error processing task event: {e}", exc_info=True)
             
             # Publish failure event
             failure_event = {
-                "eventId": f"failure_{int(time.time() * 1000)}",
-                "eventType": "task.failed",
-                "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                "source": SERVICE_NAME,
-                "version": "1.0",
+                "workflowId": event.get('workflowId', 'unknown'),
+                "taskId": event.get('taskId', 'unknown'),
+                "eventType": "email_validation_completed",
                 "data": {
-                    "workflowId": event['data']['workflowId'],
-                    "taskId": event['data']['taskId'],
-                    "taskType": "email_validation",
-                    "status": "FAILED",
+                    "result": "failure",
+                    "processedRecords": 0,
+                    "failedRecords": event.get('data', {}).get('records', 0),
+                    "outputData": "validation_failed",
+                    "pipelineStage": "email_validation",
+                    "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ'),
                     "error": str(e)
                 }
             }
             
-            self.kafka_producer.send('task-updates', failure_event)
+            self.kafka_producer.send('email-validation-results', failure_event)
             self.kafka_producer.flush()
+            logger.error(f"❌ Published failure event to email-validation-results")
     
     def consume_task_events(self):
         """Consume task events from Kafka"""
@@ -121,15 +130,26 @@ class EmailValidatorService:
         for message in consumer:
             try:
                 event = message.value
-                logger.info(f"Received task event: {event['eventType']}")
+                logger.info(f"🔍 Raw message value type: {type(event)}")
+                logger.info(f"🔍 Raw message value: {event}")
                 
-                if event['eventType'] == 'task.started':
-                    self.process_task_event(event)
+                if isinstance(event, dict):
+                    event_type = event.get('eventType', 'unknown')
+                    logger.info(f"📨 Event type: {event_type}")
+                    logger.info(f"📨 Full event structure: {event}")
+                    
+                    if event_type == 'email_validation_request':
+                        logger.info(f"✅ MATCH! Processing email validation request for workflow: {event.get('workflowId')}")
+                        logger.info(f"✅ Calling process_task_event with: {event}")
+                        self.process_task_event(event)
+                        logger.info(f"✅ process_task_event completed")
+                    else:
+                        logger.warning(f"❌ NO MATCH! Expected 'email_validation_request', got: '{event_type}'")
                 else:
-                    logger.debug(f"Skipping event type: {event['eventType']}")
+                    logger.error(f"❌ Event is not a dictionary! Type: {type(event)}, Value: {event}")
                     
             except Exception as e:
-                logger.error(f"Error processing message: {e}", exc_info=True)
+                logger.error(f"💥 Error processing message: {e}", exc_info=True)
 
 def main():
     """Start the Email Validator Service"""
