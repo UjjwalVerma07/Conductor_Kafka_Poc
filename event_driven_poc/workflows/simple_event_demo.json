@@ -1,0 +1,121 @@
+{
+  "name": "simple_event_demo",
+  "description": "Simple event-driven workflow demonstration using WAIT tasks",
+  "version": 1,
+  "tasks": [
+    {
+      "name": "start_workflow",
+      "taskReferenceName": "start_workflow",
+      "type": "KAFKA_PUBLISH",
+      "inputParameters": {
+        "kafka_request": {
+          "topic": "conductor-events",
+          "bootStrapServers": "kafka:9092",
+          "value": "Starting event-driven workflow - ID: ${workflow.workflowId}",
+          "key": "workflow-start-${workflow.instanceId}"
+        }
+      }
+    },
+    {
+      "name": "wait_for_external_trigger",
+      "taskReferenceName": "wait_for_external_trigger",
+      "type": "WAIT",
+      "inputParameters": {
+        "duration": "30s"
+      }
+    },
+    {
+      "name": "process_after_wait",
+      "taskReferenceName": "process_after_wait",
+      "type": "KAFKA_PUBLISH",
+      "inputParameters": {
+        "kafka_request": {
+          "topic": "conductor-events",
+          "bootStrapServers": "kafka:9092",
+          "value": "Workflow resumed after wait - processing data for workflow: ${workflow.workflowId}",
+          "key": "workflow-resume-${workflow.instanceId}"
+        }
+      }
+    },
+    {
+      "name": "conditional_processing",
+      "taskReferenceName": "conditional_processing",
+      "type": "SWITCH",
+      "inputParameters": {
+        "workflow_status": "ACTIVE"
+      },
+      "expression": "workflow_status",
+      "evaluatorType": "value-param",
+      "decisionCases": {
+        "ACTIVE": [
+          {
+            "name": "active_processing",
+            "taskReferenceName": "active_processing",
+            "type": "KAFKA_PUBLISH",
+            "inputParameters": {
+              "kafka_request": {
+                "topic": "conductor-events",
+                "bootStrapServers": "kafka:9092",
+                "value": "Workflow is active - performing active processing for: ${workflow.workflowId}",
+                "key": "active-processing-${workflow.instanceId}"
+              }
+            }
+          }
+        ],
+        "PAUSED": [
+          {
+            "name": "paused_processing",
+            "taskReferenceName": "paused_processing",
+            "type": "KAFKA_PUBLISH",
+            "inputParameters": {
+              "kafka_request": {
+                "topic": "conductor-events",
+                "bootStrapServers": "kafka:9092",
+                "value": "Workflow is paused - performing paused processing for: ${workflow.workflowId}",
+                "key": "paused-processing-${workflow.instanceId}"
+              }
+            }
+          }
+        ]
+      },
+      "defaultCase": [
+        {
+          "name": "default_processing",
+          "taskReferenceName": "default_processing",
+          "type": "KAFKA_PUBLISH",
+          "inputParameters": {
+            "kafka_request": {
+              "topic": "conductor-events",
+              "bootStrapServers": "kafka:9092",
+              "value": "Workflow status unknown - performing default processing for: ${workflow.workflowId}",
+              "key": "default-processing-${workflow.instanceId}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "finalize_workflow",
+      "taskReferenceName": "finalize_workflow",
+      "type": "KAFKA_PUBLISH",
+      "inputParameters": {
+        "kafka_request": {
+          "topic": "conductor-events",
+          "bootStrapServers": "kafka:9092",
+          "value": "Event-driven workflow completed successfully - Final result for: ${workflow.workflowId}",
+          "key": "workflow-complete-${workflow.instanceId}"
+        }
+      }
+    }
+  ],
+  "inputParameters": [],
+  "outputParameters": {
+    "workflow_result": "${finalize_workflow.output}",
+    "processing_result": "${conditional_processing.output}"
+  },
+  "schemaVersion": 2,
+  "restartable": true,
+  "workflowStatusListenerEnabled": false,
+  "timeoutPolicy": "ALERT_ONLY",
+  "timeoutSeconds": 300
+}
