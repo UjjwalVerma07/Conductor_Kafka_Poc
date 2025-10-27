@@ -1,0 +1,32 @@
+{
+  "name": "corrected_kafka_test",
+  "description": "Test with correct bootStrapServers parameter",
+  "version": 1,
+  "tasks": [
+    {
+      "name": "kafka_test_task",
+      "taskReferenceName": "kafka_test_task",
+      "type": "KAFKA_PUBLISH",
+      "inputParameters": {
+        "kafka_request": {
+          "topic": "conductor-events",
+          "bootStrapServers": "kafka:9092",
+          "value": "test message",
+          "key": "test-key",
+          "keySerializer": "org.apache.kafka.common.serialization.StringSerializer",
+          "valueSerializer": "org.apache.kafka.common.serialization.StringSerializer"
+        }
+      }
+    }
+  ],
+  "inputParameters": [],
+  "outputParameters": {
+    "result": "${kafka_test_task.output}"
+  },
+  "schemaVersion": 2,
+  "restartable": true,
+  "workflowStatusListenerEnabled": false,
+  "timeoutPolicy": "ALERT_ONLY",
+  "timeoutSeconds": 0
+}
+

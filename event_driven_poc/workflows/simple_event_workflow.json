@@ -1,0 +1,88 @@
+{
+  "name": "simple_event_workflow",
+  "description": "Simple workflow that triggers microservices via HTTP calls to Event Publisher",
+  "version": 1,
+  "tasks": [
+    {
+      "name": "trigger_email_validation",
+      "taskReferenceName": "trigger_email_validation",
+      "type": "HTTP",
+      "inputParameters": {
+        "http_request": {
+          "uri": "http://conductor-event-publisher:8080/trigger-event",
+          "method": "POST",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "taskType": "email_validation",
+            "workflowId": "${workflow.workflowId}",
+            "taskId": "${trigger_email_validation.taskId}",
+            "inputData": {
+              "data": "test_email_data",
+              "records": 100
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "trigger_phone_validation",
+      "taskReferenceName": "trigger_phone_validation",
+      "type": "HTTP",
+      "inputParameters": {
+        "http_request": {
+          "uri": "http://conductor-event-publisher:8080/trigger-event",
+          "method": "POST",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "taskType": "phone_validation",
+            "workflowId": "${workflow.workflowId}",
+            "taskId": "${trigger_phone_validation.taskId}",
+            "inputData": {
+              "data": "test_phone_data",
+              "records": 100
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "trigger_enrichment",
+      "taskReferenceName": "trigger_enrichment",
+      "type": "HTTP",
+      "inputParameters": {
+        "http_request": {
+          "uri": "http://conductor-event-publisher:8080/trigger-event",
+          "method": "POST",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "taskType": "enrichment",
+            "workflowId": "${workflow.workflowId}",
+            "taskId": "${trigger_enrichment.taskId}",
+            "inputData": {
+              "data": "test_enrichment_data",
+              "records": 100
+            }
+          }
+        }
+      }
+    }
+  ],
+  "inputParameters": [],
+  "outputParameters": {
+    "email_result": "${trigger_email_validation.output}",
+    "phone_result": "${trigger_phone_validation.output}",
+    "enrichment_result": "${trigger_enrichment.output}"
+  },
+  "schemaVersion": 2,
+  "restartable": true,
+  "workflowStatusListenerEnabled": false,
+  "timeoutPolicy": "ALERT_ONLY",
+  "timeoutSeconds": 0
+}
+

@@ -1,0 +1,58 @@
+{
+  "name": "final_event_driven_workflow",
+  "description": "Final working event-driven workflow with Conductor publishing to Kafka",
+  "version": 1,
+  "tasks": [
+    {
+      "name": "email_validation_task",
+      "taskReferenceName": "email_validation_task",
+      "type": "KAFKA_PUBLISH",
+      "inputParameters": {
+        "kafka_request": {
+          "topic": "conductor-events",
+          "bootStrapServers": "kafka:9092",
+          "value": "{\"eventId\":\"${workflow.instanceId}-email-${workflow.startTime}\",\"eventType\":\"task.started\",\"timestamp\":\"${workflow.startTime}\",\"source\":\"conductor\",\"data\":{\"workflowId\":\"${workflow.workflowId}\",\"taskId\":\"${email_validation_task.taskId}\",\"taskType\":\"email_validation\",\"status\":\"STARTED\",\"input\":{\"data\":\"test_email_data\",\"records\":100}}}",
+          "key": "email-validation"
+        }
+      }
+    },
+    {
+      "name": "phone_validation_task",
+      "taskReferenceName": "phone_validation_task",
+      "type": "KAFKA_PUBLISH",
+      "inputParameters": {
+        "kafka_request": {
+          "topic": "conductor-events",
+          "bootStrapServers": "kafka:9092",
+          "value": "{\"eventId\":\"${workflow.instanceId}-phone-${workflow.startTime}\",\"eventType\":\"task.started\",\"timestamp\":\"${workflow.startTime}\",\"source\":\"conductor\",\"data\":{\"workflowId\":\"${workflow.workflowId}\",\"taskId\":\"${phone_validation_task.taskId}\",\"taskType\":\"phone_validation\",\"status\":\"STARTED\",\"input\":{\"data\":\"test_phone_data\",\"records\":100}}}",
+          "key": "phone-validation"
+        }
+      }
+    },
+    {
+      "name": "enrichment_task",
+      "taskReferenceName": "enrichment_task",
+      "type": "KAFKA_PUBLISH",
+      "inputParameters": {
+        "kafka_request": {
+          "topic": "conductor-events",
+          "bootStrapServers": "kafka:9092",
+          "value": "{\"eventId\":\"${workflow.instanceId}-enrichment-${workflow.startTime}\",\"eventType\":\"task.started\",\"timestamp\":\"${workflow.startTime}\",\"source\":\"conductor\",\"data\":{\"workflowId\":\"${workflow.workflowId}\",\"taskId\":\"${enrichment_task.taskId}\",\"taskType\":\"enrichment\",\"status\":\"STARTED\",\"input\":{\"data\":\"test_enrichment_data\",\"records\":100}}}",
+          "key": "enrichment"
+        }
+      }
+    }
+  ],
+  "inputParameters": [],
+  "outputParameters": {
+    "email_result": "${email_validation_task.output}",
+    "phone_result": "${phone_validation_task.output}",
+    "enrichment_result": "${enrichment_task.output}"
+  },
+  "schemaVersion": 2,
+  "restartable": true,
+  "workflowStatusListenerEnabled": false,
+  "timeoutPolicy": "ALERT_ONLY",
+  "timeoutSeconds": 0
+}
+

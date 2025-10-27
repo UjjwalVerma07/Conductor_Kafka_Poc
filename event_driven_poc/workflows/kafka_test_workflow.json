@@ -1,0 +1,46 @@
+{
+  "name": "kafka_test_workflow",
+  "description": "Test workflow with different Kafka configuration formats",
+  "version": 1,
+  "tasks": [
+    {
+      "name": "kafka_test_task",
+      "taskReferenceName": "kafka_test_task",
+      "type": "KAFKA_PUBLISH",
+      "inputParameters": {
+        "kafka_request": {
+          "topic": "conductor-events",
+          "bootstrap.servers": "kafka:9092",
+          "key.serializer": "org.apache.kafka.common.serialization.StringSerializer",
+          "value.serializer": "org.apache.kafka.common.serialization.StringSerializer",
+          "message": {
+            "eventId": "test-event-123",
+            "eventType": "task.started",
+            "timestamp": "2025-10-27T03:59:00Z",
+            "source": "conductor",
+            "data": {
+              "workflowId": "${workflow.workflowId}",
+              "taskId": "${kafka_test_task.taskId}",
+              "taskType": "email_validation",
+              "status": "STARTED",
+              "input": {
+                "data": "test_email_data",
+                "records": 100
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "inputParameters": [],
+  "outputParameters": {
+    "result": "${kafka_test_task.output}"
+  },
+  "schemaVersion": 2,
+  "restartable": true,
+  "workflowStatusListenerEnabled": false,
+  "timeoutPolicy": "ALERT_ONLY",
+  "timeoutSeconds": 0
+}
+
