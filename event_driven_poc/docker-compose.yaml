@@ -112,9 +112,11 @@ services:
         condition: service_healthy
     environment:
       - KAFKA_BOOTSTRAP=kafka:9092
+      - CONDUCTOR_SERVER_URL=http://conductor-server:8080/api
     networks:
       - event-driven-net
     restart: unless-stopped
+    command: python3 enhanced_sequential_router.py
 
   # Email Validator Service
   email-validator:
