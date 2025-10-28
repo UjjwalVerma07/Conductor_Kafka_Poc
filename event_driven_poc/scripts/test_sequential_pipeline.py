@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 CONDUCTOR_SERVER_URL = os.getenv('CONDUCTOR_SERVER_URL', 'http://localhost:8080/api')
-KAFKA_BOOTSTRAP = os.getenv('KAFKA_BOOTSTRAP', 'localhost:9092')
+KAFKA_BOOTSTRAP = os.getenv('KAFKA_BOOTSTRAP', 'localhost:9092')  # Use localhost for host machine access
 
 def check_conductor_health():
     """Check if Conductor server is healthy"""
@@ -50,6 +50,9 @@ def register_sequential_workflow():
         if response.status_code == 200:
             logger.info("✅ Registered sequential pipeline workflow")
             return True
+        elif response.status_code == 409:
+            logger.info("✅ Sequential pipeline workflow already exists")
+            return True
         else:
             logger.error(f"❌ Failed to register workflow: {response.status_code} - {response.text}")
             return False
@@ -71,7 +74,8 @@ def start_sequential_workflow():
         )
         
         if response.status_code == 200:
-            workflow_id = response.json()['workflowId']
+            # Response is just the workflow ID as plain text, not JSON
+            workflow_id = response.text.strip()
             logger.info(f"✅ Started sequential pipeline workflow: {workflow_id}")
             return workflow_id
         else:
@@ -125,12 +129,15 @@ def monitor_workflow(workflow_id):
 def check_kafka_pipeline_messages():
     """Check Kafka messages to see pipeline processing"""
     try:
+        logger.info(f"🔌 Connecting to Kafka at {KAFKA_BOOTSTRAP}...")
         consumer = KafkaConsumer(
             'conductor-events',
             bootstrap_servers=KAFKA_BOOTSTRAP,
             value_deserializer=lambda m: json.loads(m.decode('utf-8')),
             auto_offset_reset='latest',
-            consumer_timeout_ms=15000
+            consumer_timeout_ms=15000,
+            request_timeout_ms=10000,
+            api_version=(2, 0, 0)
         )
         
         logger.info("📨 Checking Kafka pipeline messages...")
@@ -161,7 +168,9 @@ def check_kafka_pipeline_messages():
         consumer.close()
         
     except Exception as e:
-        logger.error(f"❌ Error checking Kafka messages: {e}")
+        logger.warning(f"⚠️ Cannot connect to Kafka for monitoring: {e}")
+        logger.info("💡 This is normal if running from host machine - workflow will still execute")
+        logger.info("💡 To monitor Kafka messages, run: docker exec -it kafka-event kafka-console-consumer --bootstrap-server localhost:9092 --topic conductor-events --from-beginning")
 
 def main():
     """Main test function"""
@@ -189,7 +198,13 @@ def main():
     logger.info("👀 Monitoring sequential pipeline execution...")
     workflow_result = monitor_workflow(workflow_id)
     
-    # Step 5: Check Kafka messages
+    if workflow_result:
+        logger.info("✅ Workflow monitoring completed")
+    else:
+        logger.warning("⚠️ Workflow monitoring timed out, but workflow may still be running")
+        logger.info(f"💡 Check workflow status manually: curl 'http://localhost:8080/api/workflow/{workflow_id}'")
+    
+    # Step 5: Check Kafka messages (optional)
     logger.info("📨 Checking pipeline messages...")
     check_kafka_pipeline_messages()
     
