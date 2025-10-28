@@ -36,10 +36,60 @@ def check_conductor_health():
         logger.error(f"❌ Cannot connect to Conductor server: {e}")
         return False
 
-def register_sequential_workflow():
-    """Register the sequential pipeline workflow"""
+def register_event_task_definition():
+    """Register the EVENT task definition"""
     try:
-        with open('workflows/sequential_pipeline_workflow.json', 'r') as f:
+        with open('task_definitions/event_task.json', 'r') as f:
+            task_def = json.load(f)
+        
+        response = requests.post(
+            f"{CONDUCTOR_SERVER_URL}/metadata/taskdefs",
+            json=task_def
+        )
+        
+        if response.status_code == 200:
+            logger.info("✅ Registered EVENT task definition")
+            return True
+        elif response.status_code == 409:
+            logger.info("✅ EVENT task definition already exists")
+            return True
+        else:
+            logger.error(f"❌ Failed to register EVENT task definition: {response.status_code} - {response.text}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ Error registering EVENT task definition: {e}")
+        return False
+
+def register_kafka_publish_task_definition():
+    """Register the KAFKA_PUBLISH task definition"""
+    try:
+        with open('task_definitions/kafka_publish_task.json', 'r') as f:
+            task_def = json.load(f)
+        
+        response = requests.post(
+            f"{CONDUCTOR_SERVER_URL}/metadata/taskdefs",
+            json=task_def
+        )
+        
+        if response.status_code == 200:
+            logger.info("✅ Registered KAFKA_PUBLISH task definition")
+            return True
+        elif response.status_code == 409:
+            logger.info("✅ KAFKA_PUBLISH task definition already exists")
+            return True
+        else:
+            logger.error(f"❌ Failed to register KAFKA_PUBLISH task definition: {response.status_code} - {response.text}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ Error registering KAFKA_PUBLISH task definition: {e}")
+        return False
+
+def register_event_driven_sequential_workflow():
+    """Register the event-driven sequential workflow"""
+    try:
+        with open('workflows/event_driven_sequential_workflow.json', 'r') as f:
             workflow = json.load(f)
         
         response = requests.post(
@@ -48,10 +98,10 @@ def register_sequential_workflow():
         )
         
         if response.status_code == 200:
-            logger.info("✅ Registered sequential pipeline workflow")
+            logger.info("✅ Registered event-driven sequential workflow")
             return True
         elif response.status_code == 409:
-            logger.info("✅ Sequential pipeline workflow already exists")
+            logger.info("✅ Event-driven sequential workflow already exists")
             return True
         else:
             logger.error(f"❌ Failed to register workflow: {response.status_code} - {response.text}")
@@ -61,22 +111,22 @@ def register_sequential_workflow():
         logger.error(f"❌ Error registering workflow: {e}")
         return False
 
-def start_sequential_workflow():
-    """Start the sequential pipeline workflow"""
+def start_event_driven_sequential_workflow():
+    """Start the event-driven sequential workflow"""
     try:
         workflow_input = {
             "rawData": "sample_customer_data_with_emails_and_phones"
         }
         
         response = requests.post(
-            f"{CONDUCTOR_SERVER_URL}/workflow/sequential_pipeline_workflow",
+            f"{CONDUCTOR_SERVER_URL}/workflow/event_driven_sequential_workflow",
             json=workflow_input
         )
         
         if response.status_code == 200:
             # Response is just the workflow ID as plain text, not JSON
             workflow_id = response.text.strip()
-            logger.info(f"✅ Started sequential pipeline workflow: {workflow_id}")
+            logger.info(f"✅ Started event-driven sequential workflow: {workflow_id}")
             return workflow_id
         else:
             logger.error(f"❌ Failed to start workflow: {response.status_code} - {response.text}")
@@ -174,7 +224,7 @@ def check_kafka_pipeline_messages():
 
 def main():
     """Main test function"""
-    logger.info("🚀 Starting Sequential Pipeline Test")
+    logger.info("🚀 Starting Event-Driven Sequential Pipeline Test")
     logger.info(f"Conductor: {CONDUCTOR_SERVER_URL}")
     logger.info(f"Kafka: {KAFKA_BOOTSTRAP}")
     
@@ -183,19 +233,28 @@ def main():
         logger.error("❌ Conductor server is not healthy")
         return False
     
-    # Step 2: Register workflow
-    if not register_sequential_workflow():
-        logger.error("❌ Failed to register workflow")
+    # Step 2: Register task definitions
+    if not register_event_task_definition():
+        logger.error("❌ Failed to register EVENT task definition")
         return False
     
-    # Step 3: Start workflow
-    workflow_id = start_sequential_workflow()
+    if not register_kafka_publish_task_definition():
+        logger.error("❌ Failed to register KAFKA_PUBLISH task definition")
+        return False
+    
+    # Step 3: Register workflow
+    if not register_event_driven_sequential_workflow():
+        logger.error("❌ Failed to register event-driven sequential workflow")
+        return False
+    
+    # Step 4: Start workflow
+    workflow_id = start_event_driven_sequential_workflow()
     if not workflow_id:
         logger.error("❌ Failed to start workflow")
         return False
     
-    # Step 4: Monitor workflow
-    logger.info("👀 Monitoring sequential pipeline execution...")
+    # Step 5: Monitor workflow
+    logger.info("👀 Monitoring event-driven sequential pipeline execution...")
     workflow_result = monitor_workflow(workflow_id)
     
     if workflow_result:
@@ -204,16 +263,16 @@ def main():
         logger.warning("⚠️ Workflow monitoring timed out, but workflow may still be running")
         logger.info(f"💡 Check workflow status manually: curl 'http://localhost:8080/api/workflow/{workflow_id}'")
     
-    # Step 5: Check Kafka messages (optional)
+    # Step 6: Check Kafka messages (optional)
     logger.info("📨 Checking pipeline messages...")
     check_kafka_pipeline_messages()
     
     if workflow_result and workflow_result.get('status') == 'COMPLETED':
-        logger.info("🎉 Sequential pipeline test completed successfully!")
-        logger.info("🔄 Pipeline Flow: Start → Email Validation → Phone Validation → Enrichment → Complete")
+        logger.info("🎉 Event-driven sequential pipeline test completed successfully!")
+        logger.info("🔄 Pipeline Flow: Start → Email Validation (EVENT) → Phone Validation (EVENT) → Enrichment (EVENT) → Complete")
         return True
     else:
-        logger.warning("⚠️ Sequential pipeline test completed with issues")
+        logger.warning("⚠️ Event-driven sequential pipeline test completed with issues")
         return False
 
 if __name__ == '__main__':

@@ -1,8 +1,11 @@
-version: '3.8'
+
 
 networks:
   event-driven-net:
     driver: bridge
+
+volumes:
+  minio_data:
 
 services:
   # Zookeeper for Kafka
@@ -52,11 +55,34 @@ services:
     networks:
       - event-driven-net
 
+  # MinIO S3-Compatible Storage
+  minio:
+    image: minio/minio:latest
+    container_name: minio-event
+    ports:
+      - "9000:9000"      # API port
+      - "9001:9001"      # Console port
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 60s
+    networks:
+      - event-driven-net
+
   # Conductor Server
   conductor-server:
     image: conductoross/conductor-standalone:3.15.0
     container_name: conductor-server-event
-    environment:
+    environment: 
       - DB=memory
       - conductor.event-queues.kafka.enabled=true
       - conductor.event-queues.kafka.bootstrap-servers=kafka:9092
@@ -72,6 +98,7 @@ services:
       - spring.kafka.bootstrap-servers=kafka:9092
     ports:
       - "8080:8080"
+      - "5000:5000"
     depends_on:
       kafka:
         condition: service_healthy
@@ -86,22 +113,6 @@ services:
       start_period: 60s
 
   # Note: Conductor UI is available at http://localhost:8080 (built into the server)
-
-  # Conductor Event Publisher
-  conductor-event-publisher:
-    build: ./conductor_event_publisher
-    container_name: conductor-event-publisher
-    depends_on:
-      conductor-server:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    environment:
-      - CONDUCTOR_SERVER_URL=http://conductor-server:8080/api
-      - KAFKA_BOOTSTRAP=kafka:9092
-    networks:
-      - event-driven-net
-    restart: unless-stopped
 
   # Event Router
   event-router:
@@ -125,9 +136,15 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+      minio:
+        condition: service_healthy
     environment:
       - KAFKA_BOOTSTRAP=kafka:9092
       - SERVICE_NAME=email-validator
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin123
+      - MINIO_BUCKET=email-validation
     networks:
       - event-driven-net
     restart: unless-stopped
@@ -139,9 +156,15 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+      minio:
+        condition: service_healthy
     environment:
       - KAFKA_BOOTSTRAP=kafka:9092
       - SERVICE_NAME=phone-validator
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin123
+      - MINIO_BUCKET=phone-validation
     networks:
       - event-driven-net
     restart: unless-stopped
@@ -153,9 +176,15 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+      minio:
+        condition: service_healthy
     environment:
       - KAFKA_BOOTSTRAP=kafka:9092
       - SERVICE_NAME=enricher
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin123
+      - MINIO_BUCKET=enrichment
     networks:
       - event-driven-net
     restart: unless-stopped
