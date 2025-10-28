@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """
-Phone Validator Service - Event-Driven
-Consumes events from Kafka and processes phone validation
+Phone Validator Service - MinIO File Processing
+Processes CSV files from MinIO, validates phone numbers, uploads results
 """
 
 import os
 import json
 import time
 import logging
+import pandas as pd
+import re
 from kafka import KafkaConsumer, KafkaProducer
+from minio import Minio
+from minio.error import S3Error
+import io
 
 # Configure logging
 logging.basicConfig(
@@ -20,6 +25,10 @@ logger = logging.getLogger(__name__)
 # Configuration
 KAFKA_BOOTSTRAP = os.getenv('KAFKA_BOOTSTRAP', 'localhost:9092')
 SERVICE_NAME = os.getenv('SERVICE_NAME', 'phone-validator')
+MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT', 'minio:9000')
+MINIO_ACCESS_KEY = os.getenv('MINIO_ACCESS_KEY', 'minioadmin')
+MINIO_SECRET_KEY = os.getenv('MINIO_SECRET_KEY', 'minioadmin')
+MINIO_BUCKET = os.getenv('MINIO_BUCKET', 'phone-validation')
 
 # Initialize Kafka producer
 kafka_producer = KafkaProducer(
@@ -28,74 +37,163 @@ kafka_producer = KafkaProducer(
 )
 
 class PhoneValidatorService:
-    """Event-driven phone validation service"""
+    """MinIO-based phone validation service"""
     
     def __init__(self):
         self.kafka_producer = kafka_producer
+        self.minio_client = Minio(
+            MINIO_ENDPOINT,
+            access_key=MINIO_ACCESS_KEY,
+            secret_key=MINIO_SECRET_KEY,
+            secure=False
+        )
+        self._ensure_bucket_exists()
     
-    #This is the function that will validate the phones
-    def validate_phones(self, data):
-        """Mock phone validation logic"""
-        # Simulate processing time
-        time.sleep(2)
-        
-        # Mock validation results
-        result = {
-            'status': 'success',
-            'total_records': 100,
-            'valid_phones': 90,
-            'invalid_phones': 10,
-            'processing_time': '2s'
-        }
-        
-        logger.info(f"Phone validation completed: {result}")
-        return result
+    def _ensure_bucket_exists(self):
+        """Ensure MinIO bucket exists"""
+        try:
+            if not self.minio_client.bucket_exists(MINIO_BUCKET):
+                self.minio_client.make_bucket(MINIO_BUCKET)
+                logger.info(f"✅ Created bucket: {MINIO_BUCKET}")
+        except S3Error as e:
+            logger.error(f"❌ Error creating bucket: {e}")
     
-    #This is the function that will process the task event and then the result wiill be published to the phone-validation-results topic
+    def _ensure_output_bucket_exists(self, bucket_name):
+        """Ensure output bucket exists"""
+        try:
+            if not self.minio_client.bucket_exists(bucket_name):
+                self.minio_client.make_bucket(bucket_name)
+                logger.info(f"✅ Created output bucket: {bucket_name}")
+            else:
+                logger.info(f"✅ Output bucket exists: {bucket_name}")
+        except S3Error as e:
+            logger.error(f"❌ Error creating output bucket: {e}")
+    
+    def download_file(self, bucket, key):
+        """Download file from MinIO"""
+        try:
+            response = self.minio_client.get_object(bucket, key)
+            data = response.read()
+            response.close()
+            response.release_conn()
+            logger.info(f"✅ Downloaded file: {bucket}/{key}")
+            return data
+        except S3Error as e:
+            logger.error(f"❌ Error downloading file {bucket}/{key}: {e}")
+            raise
+    
+    def upload_file(self, bucket, key, data):
+        """Upload file to MinIO"""
+        try:
+            data_stream = io.BytesIO(data)
+            self.minio_client.put_object(
+                bucket, key, data_stream, len(data)
+            )
+            logger.info(f"✅ Uploaded file: {bucket}/{key}")
+        except S3Error as e:
+            logger.error(f"❌ Error uploading file {bucket}/{key}: {e}")
+            raise
+    
+    def validate_phone(self, phone):
+        """Validate phone number (US format)"""
+        # Remove all non-digit characters
+        digits = re.sub(r'\D', '', str(phone))
+        
+        # Check if it's a valid US phone number (10 digits)
+        if len(digits) == 10:
+            return True
+        elif len(digits) == 11 and digits.startswith('1'):
+            return True
+        else:
+            return False
+    
+    def process_csv_file(self, csv_data):
+        """Process CSV file and validate phone numbers"""
+        try:
+            # Read CSV from bytes
+            df = pd.read_csv(io.BytesIO(csv_data))
+            logger.info(f"📊 Processing CSV with {len(df)} rows")
+            
+            # Assume phone column is named 'phone'
+            if 'phone' not in df.columns:
+                logger.error("❌ No 'phone' column found in CSV")
+                return None, 0, 0
+            
+            # Validate phone numbers
+            df['phone_valid'] = df['phone'].apply(self.validate_phone)
+            
+            # Calculate statistics
+            total_records = len(df)
+            valid_phones = df['phone_valid'].sum()
+            invalid_phones = total_records - valid_phones
+            
+            # Filter valid phones for output
+            valid_df = df[df['phone_valid'] == True].drop('phone_valid', axis=1)
+            
+            # Convert back to CSV
+            output_csv = valid_df.to_csv(index=False)
+            
+            logger.info(f"✅ Phone validation completed: {valid_phones}/{total_records} valid")
+            return output_csv.encode('utf-8'), valid_phones, invalid_phones
+            
+        except Exception as e:
+            logger.error(f"❌ Error processing CSV: {e}")
+            raise
+    
     def process_task_event(self, event):
-        """Process task event and publish result"""
+        """Process task event with MinIO file operations"""
         try:
             workflow_id = event.get('workflowId')
             task_id = event.get('taskId')
             data = event.get('data', {})
-            input_data = data.get('inputData', 'email_validated_data')
-            records = data.get('records', 95)
             
-            logger.info(f"Processing phone validation for workflow {workflow_id}, task {task_id}")
-            logger.info(f"Input data: {input_data}, Records: {records}")
+            # Extract MinIO file information
+            input_bucket = data.get('input_bucket')
+            input_key = data.get('input_key')
+            output_bucket = data.get('output_bucket')
+            output_key = data.get('output_key')
             
-            # Simulate phone validation
-            result = self.validate_phones(input_data)
+            logger.info(f"📱 Processing phone validation for workflow {workflow_id}")
+            logger.info(f"📁 Input: {input_bucket}/{input_key}")
+            logger.info(f"📁 Output: {output_bucket}/{output_key}")
             
-            # Calculate processed records (simulate some failures)
-            processed_records = int(records * 0.90)  # 90% success rate
-            failed_records = records - processed_records
+            # Ensure output bucket exists
+            self._ensure_output_bucket_exists(output_bucket)
             
-            # Publish result event to phone-validation-results topic
+            # Download input file
+            input_data = self.download_file(input_bucket, input_key)
+            
+            # Process CSV file
+            output_data, valid_count, invalid_count = self.process_csv_file(input_data)
+            
+            # Upload processed file
+            self.upload_file(output_bucket, output_key, output_data)
+            
+            # Publish result event
             result_event = {
                 "workflowId": workflow_id,
                 "taskId": task_id,
                 "eventType": "phone_validation_completed",
                 "data": {
+                    "input_bucket": input_bucket,
+                    "input_key": input_key,
+                    "output_bucket": output_bucket,
+                    "output_key": output_key,
                     "result": "success",
-                    "processedRecords": processed_records,
-                    "failedRecords": failed_records,
-                    "outputData": "phone_validated_data",
+                           "processedRecords": int(valid_count),
+                           "failedRecords": int(invalid_count),
                     "pipelineStage": "phone_validation",
-                    "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                    "validationResult": result
+                    "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ')
                 }
             }
             
-            # Publish to phone-validation-results topic
             self.kafka_producer.send('phone-validation-results', result_event)
             self.kafka_producer.flush()
             
-            logger.info(f"✅ Published result event to phone-validation-results for task {task_id}")
-            logger.info(f"Processed {processed_records} records, {failed_records} failed")
+            logger.info(f"✅ Phone validation completed: {valid_count} valid, {invalid_count} invalid")
             
         except Exception as e:
-            logger.error(f"Error processing task event: {e}", exc_info=True)
+            logger.error(f"❌ Error processing phone validation: {e}", exc_info=True)
             
             # Publish failure event
             failure_event = {
@@ -104,20 +202,15 @@ class PhoneValidatorService:
                 "eventType": "phone_validation_completed",
                 "data": {
                     "result": "failure",
-                    "processedRecords": 0,
-                    "failedRecords": event.get('data', {}).get('records', 0),
-                    "outputData": "validation_failed",
+                    "error": str(e),
                     "pipelineStage": "phone_validation",
-                    "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                    "error": str(e)
+                    "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ')
                 }
             }
             
             self.kafka_producer.send('phone-validation-results', failure_event)
             self.kafka_producer.flush()
-            logger.error(f"❌ Published failure event to phone-validation-results")
     
-    #This is the function that will consume the task event from the phone-validation-requests and process it by calling the process_task_event function
     def consume_task_events(self):
         """Consume task events from Kafka"""
         consumer = KafkaConsumer(
@@ -128,31 +221,30 @@ class PhoneValidatorService:
             group_id=f'{SERVICE_NAME}-group'
         )
         
-        logger.info(f"{SERVICE_NAME} started - listening for phone validation events")
+        logger.info(f"🚀 {SERVICE_NAME} started - listening for phone validation events")
         
         for message in consumer:
             try:
                 event = message.value
-                logger.info(f"Received task event: {event['eventType']}")
-                
                 event_type = event.get('eventType', 'unknown')
-                logger.info(f"Received task event: {event_type}")
                 
                 if event_type == 'phone_validation_request':
+                    logger.info(f"📱 Processing phone validation request")
                     self.process_task_event(event)
                 else:
-                    logger.debug(f"Skipping event type: {event_type}")
+                    logger.warning(f"⚠️ Ignoring event type: {event_type}")
                     
             except Exception as e:
-                logger.error(f"Error processing message: {e}", exc_info=True)
+                logger.error(f"💥 Error processing message: {e}", exc_info=True)
 
 def main():
     """Start the Phone Validator Service"""
-    logger.info(f"Starting {SERVICE_NAME} Service")
-    logger.info(f"Kafka: {KAFKA_BOOTSTRAP}")
+    logger.info(f"🚀 Starting {SERVICE_NAME} Service")
+    logger.info(f"🔌 Kafka: {KAFKA_BOOTSTRAP}")
+    logger.info(f"📦 MinIO: {MINIO_ENDPOINT}")
     
     # Wait for services to be ready
-    logger.info("Waiting 10 seconds for services to initialize...")
+    logger.info("⏳ Waiting 10 seconds for services to initialize...")
     time.sleep(10)
     
     # Start service
