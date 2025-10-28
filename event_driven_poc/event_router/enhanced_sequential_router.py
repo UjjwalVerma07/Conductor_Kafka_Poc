@@ -195,6 +195,16 @@ class EnhancedSequentialEventRouter:
             output_bucket = data.get('output_bucket', 'email-validated')
             output_key = data.get('output_key', f'email_validated_{workflow_id}.csv')
             
+            # Fix null values in file names
+            if output_key and 'null' in output_key:
+                output_key = f'email_validated_{workflow_id}.csv'
+            
+            # Debug logging
+            logger.info(f"🔍 Email validation routing - workflow_id: {workflow_id}")
+            logger.info(f"🔍 Email validation routing - input_key: {input_key}")
+            logger.info(f"🔍 Email validation routing - output_key: {output_key}")
+            logger.info(f"🔍 Email validation routing - data keys: {list(data.keys())}")
+            
             # Create email validation request with MinIO file info
             email_request = {
                 'workflowId': workflow_id,
@@ -253,6 +263,17 @@ class EnhancedSequentialEventRouter:
             output_bucket = data.get('output_bucket', 'phone-validated')
             output_key = data.get('output_key', f'phone_validated_{workflow_id}.csv')
             
+            # Fix null values in file names
+            if input_key and 'null' in input_key:
+                input_key = f'email_validated_{workflow_id}.csv'
+            if output_key and 'null' in output_key:
+                output_key = f'phone_validated_{workflow_id}.csv'
+            
+            # Debug logging
+            logger.info(f"🔍 Phone validation routing - workflow_id: {workflow_id}")
+            logger.info(f"🔍 Phone validation routing - input_key: {input_key}")
+            logger.info(f"🔍 Phone validation routing - output_key: {output_key}")
+            
             # Create phone validation request with MinIO file info
             phone_request = {
                 'workflowId': workflow_id,
@@ -304,6 +325,17 @@ class EnhancedSequentialEventRouter:
             input_key = data.get('input_key', f'phone_validated_{workflow_id}.csv')
             output_bucket = data.get('output_bucket', 'enriched')
             output_key = data.get('output_key', f'enriched_{workflow_id}.csv')
+            
+            # Fix null values in file names
+            if input_key and 'null' in input_key:
+                input_key = f'phone_validated_{workflow_id}.csv'
+            if output_key and 'null' in output_key:
+                output_key = f'enriched_{workflow_id}.csv'
+            
+            # Debug logging
+            logger.info(f"🔍 Enrichment routing - workflow_id: {workflow_id}")
+            logger.info(f"🔍 Enrichment routing - input_key: {input_key}")
+            logger.info(f"🔍 Enrichment routing - output_key: {output_key}")
             
             # Create enrichment request with MinIO file info
             enrichment_request = {
