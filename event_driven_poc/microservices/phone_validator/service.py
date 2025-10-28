@@ -33,6 +33,7 @@ class PhoneValidatorService:
     def __init__(self):
         self.kafka_producer = kafka_producer
     
+    #This is the function that will validate the phones
     def validate_phones(self, data):
         """Mock phone validation logic"""
         # Simulate processing time
@@ -50,6 +51,7 @@ class PhoneValidatorService:
         logger.info(f"Phone validation completed: {result}")
         return result
     
+    #This is the function that will process the task event and then the result wiill be published to the phone-validation-results topic
     def process_task_event(self, event):
         """Process task event and publish result"""
         try:
@@ -115,6 +117,7 @@ class PhoneValidatorService:
             self.kafka_producer.flush()
             logger.error(f"❌ Published failure event to phone-validation-results")
     
+    #This is the function that will consume the task event from the phone-validation-requests and process it by calling the process_task_event function
     def consume_task_events(self):
         """Consume task events from Kafka"""
         consumer = KafkaConsumer(

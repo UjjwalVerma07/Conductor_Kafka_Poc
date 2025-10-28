@@ -33,6 +33,8 @@ class EnricherService:
     def __init__(self):
         self.kafka_producer = kafka_producer
     
+
+    #This is the function that will enrich the data
     def enrich_data(self, data):
         """Mock data enrichment logic"""
         # Simulate processing time
@@ -50,6 +52,7 @@ class EnricherService:
         logger.info(f"Data enrichment completed: {result}")
         return result
     
+    #This is the function that will process the task event and then the result will be published to the enrichment results topic
     def process_task_event(self, event):
         """Process task event and publish result"""
         try:
@@ -115,6 +118,8 @@ class EnricherService:
             self.kafka_producer.flush()
             logger.error(f"❌ Published failure event to enrichment-results")
     
+
+    #This is the function that will consume the task event from the enrichment-requests topic and process it by calling the process_task_event function
     def consume_task_events(self):
         """Consume task events from Kafka"""
         consumer = KafkaConsumer(

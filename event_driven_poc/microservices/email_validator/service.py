@@ -18,6 +18,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration
+#This is the kafka bootstrap server address for the email validator service
 KAFKA_BOOTSTRAP = os.getenv('KAFKA_BOOTSTRAP', 'localhost:9092')
 SERVICE_NAME = os.getenv('SERVICE_NAME', 'email-validator')
 
@@ -33,6 +34,8 @@ class EmailValidatorService:
     def __init__(self):
         self.kafka_producer = kafka_producer
     
+    #This is the function that will validate the emails
+    #It will take the data as input and return the result of the validation
     def validate_emails(self, data):
         """Mock email validation logic"""
         # Simulate processing time
@@ -50,6 +53,7 @@ class EmailValidatorService:
         logger.info(f"Email validation completed: {result}")
         return result
     
+    #This is the function that will process the task event and publish the result to the email-validation-results topic
     def process_task_event(self, event):
         """Process task event and publish result"""
         try:
@@ -115,6 +119,7 @@ class EmailValidatorService:
             self.kafka_producer.flush()
             logger.error(f"❌ Published failure event to email-validation-results")
     
+    #This is the function that will consume the task event from the email-validation-requests topic and process it by calling the process_task_event function
     def consume_task_events(self):
         """Consume task events from Kafka"""
         consumer = KafkaConsumer(
