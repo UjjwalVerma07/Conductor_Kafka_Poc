@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """
-Enricher Service - Event-Driven
-Consumes events from Kafka and processes data enrichment
+Enricher Service - MinIO File Processing
+Processes CSV files from MinIO, enriches data, uploads results
 """
 
 import os
 import json
 import time
 import logging
+import pandas as pd
+import random
 from kafka import KafkaConsumer, KafkaProducer
+from minio import Minio
+from minio.error import S3Error
+import io
 
 # Configure logging
 logging.basicConfig(
@@ -20,6 +25,10 @@ logger = logging.getLogger(__name__)
 # Configuration
 KAFKA_BOOTSTRAP = os.getenv('KAFKA_BOOTSTRAP', 'localhost:9092')
 SERVICE_NAME = os.getenv('SERVICE_NAME', 'enricher')
+MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT', 'minio:9000')
+MINIO_ACCESS_KEY = os.getenv('MINIO_ACCESS_KEY', 'minioadmin')
+MINIO_SECRET_KEY = os.getenv('MINIO_SECRET_KEY', 'minioadmin')
+MINIO_BUCKET = os.getenv('MINIO_BUCKET', 'enrichment')
 
 # Initialize Kafka producer
 kafka_producer = KafkaProducer(
@@ -28,75 +37,165 @@ kafka_producer = KafkaProducer(
 )
 
 class EnricherService:
-    """Event-driven data enrichment service"""
+    """MinIO-based data enrichment service"""
     
     def __init__(self):
         self.kafka_producer = kafka_producer
+        self.minio_client = Minio(
+            MINIO_ENDPOINT,
+            access_key=MINIO_ACCESS_KEY,
+            secret_key=MINIO_SECRET_KEY,
+            secure=False
+        )
+        self._ensure_bucket_exists()
     
-
-    #This is the function that will enrich the data
-    def enrich_data(self, data):
-        """Mock data enrichment logic"""
-        # Simulate processing time
-        time.sleep(2)
-        
-        # Mock enrichment results
-        result = {
-            'status': 'success',
-            'total_records': 100,
-            'enriched_records': 95,
-            'failed_records': 5,
-            'processing_time': '2s'
-        }
-        
-        logger.info(f"Data enrichment completed: {result}")
-        return result
+    def _ensure_bucket_exists(self):
+        """Ensure MinIO bucket exists"""
+        try:
+            if not self.minio_client.bucket_exists(MINIO_BUCKET):
+                self.minio_client.make_bucket(MINIO_BUCKET)
+                logger.info(f"✅ Created bucket: {MINIO_BUCKET}")
+        except S3Error as e:
+            logger.error(f"❌ Error creating bucket: {e}")
     
-    #This is the function that will process the task event and then the result will be published to the enrichment results topic
+    def _ensure_output_bucket_exists(self, bucket_name):
+        """Ensure output bucket exists"""
+        try:
+            if not self.minio_client.bucket_exists(bucket_name):
+                self.minio_client.make_bucket(bucket_name)
+                logger.info(f"✅ Created output bucket: {bucket_name}")
+            else:
+                logger.info(f"✅ Output bucket exists: {bucket_name}")
+        except S3Error as e:
+            logger.error(f"❌ Error creating output bucket: {e}")
+    
+    def download_file(self, bucket, key):
+        """Download file from MinIO"""
+        try:
+            response = self.minio_client.get_object(bucket, key)
+            data = response.read()
+            response.close()
+            response.release_conn()
+            logger.info(f"✅ Downloaded file: {bucket}/{key}")
+            return data
+        except S3Error as e:
+            logger.error(f"❌ Error downloading file {bucket}/{key}: {e}")
+            raise
+    
+    def upload_file(self, bucket, key, data):
+        """Upload file to MinIO"""
+        try:
+            data_stream = io.BytesIO(data)
+            self.minio_client.put_object(
+                bucket, key, data_stream, len(data)
+            )
+            logger.info(f"✅ Uploaded file: {bucket}/{key}")
+        except S3Error as e:
+            logger.error(f"❌ Error uploading file {bucket}/{key}: {e}")
+            raise
+    
+    def enrich_data(self, df):
+        """Enrich data with additional information"""
+        try:
+            # Add enrichment columns
+            df['customer_segment'] = df.apply(lambda x: self._get_customer_segment(x), axis=1)
+            df['risk_score'] = df.apply(lambda x: self._calculate_risk_score(x), axis=1)
+            df['enrichment_timestamp'] = time.strftime('%Y-%m-%dT%H:%M:%SZ')
+            
+            return df
+        except Exception as e:
+            logger.error(f"❌ Error enriching data: {e}")
+            raise
+    
+    def _get_customer_segment(self, row):
+        """Determine customer segment based on data"""
+        # Mock logic - in real implementation, this would use ML models or business rules
+        segments = ['Premium', 'Standard', 'Basic']
+        return random.choice(segments)
+    
+    def _calculate_risk_score(self, row):
+        """Calculate risk score for customer"""
+        # Mock logic - in real implementation, this would use actual risk models
+        return round(random.uniform(0.1, 1.0), 2)
+    
+    def process_csv_file(self, csv_data):
+        """Process CSV file and enrich data"""
+        try:
+            # Read CSV from bytes
+            df = pd.read_csv(io.BytesIO(csv_data))
+            logger.info(f"📊 Processing CSV with {len(df)} rows")
+            
+            # Enrich data
+            enriched_df = self.enrich_data(df)
+            
+            # Calculate statistics
+            total_records = len(enriched_df)
+            enriched_records = total_records  # All records get enriched
+            
+            # Convert back to CSV
+            output_csv = enriched_df.to_csv(index=False)
+            
+            logger.info(f"✅ Data enrichment completed: {enriched_records} records enriched")
+            return output_csv.encode('utf-8'), enriched_records, 0
+            
+        except Exception as e:
+            logger.error(f"❌ Error processing CSV: {e}")
+            raise
+    
     def process_task_event(self, event):
-        """Process task event and publish result"""
+        """Process task event with MinIO file operations"""
         try:
             workflow_id = event.get('workflowId')
             task_id = event.get('taskId')
             data = event.get('data', {})
-            input_data = data.get('inputData', 'phone_validated_data')
-            records = data.get('records', 90)
             
-            logger.info(f"Processing data enrichment for workflow {workflow_id}, task {task_id}")
-            logger.info(f"Input data: {input_data}, Records: {records}")
+            # Extract MinIO file information
+            input_bucket = data.get('input_bucket')
+            input_key = data.get('input_key')
+            output_bucket = data.get('output_bucket')
+            output_key = data.get('output_key')
             
-            # Simulate data enrichment
-            result = self.enrich_data(input_data)
+            logger.info(f"🔍 Processing data enrichment for workflow {workflow_id}")
+            logger.info(f"📁 Input: {input_bucket}/{input_key}")
+            logger.info(f"📁 Output: {output_bucket}/{output_key}")
             
-            # Calculate processed records (simulate some failures)
-            processed_records = int(records * 0.85)  # 85% success rate
-            failed_records = records - processed_records
+            # Ensure output bucket exists
+            self._ensure_output_bucket_exists(output_bucket)
             
-            # Publish result event to enrichment-results topic
+            # Download input file
+            input_data = self.download_file(input_bucket, input_key)
+            
+            # Process CSV file
+            output_data, enriched_count, failed_count = self.process_csv_file(input_data)
+            
+            # Upload processed file
+            self.upload_file(output_bucket, output_key, output_data)
+            
+            # Publish result event
             result_event = {
                 "workflowId": workflow_id,
                 "taskId": task_id,
                 "eventType": "enrichment_completed",
                 "data": {
+                    "input_bucket": input_bucket,
+                    "input_key": input_key,
+                    "output_bucket": output_bucket,
+                    "output_key": output_key,
                     "result": "success",
-                    "processedRecords": processed_records,
-                    "failedRecords": failed_records,
-                    "outputData": "enriched_data",
+                           "processedRecords": int(enriched_count),
+                           "failedRecords": int(failed_count),
                     "pipelineStage": "enrichment",
-                    "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                    "enrichmentResult": result
+                    "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ')
                 }
             }
             
-            # Publish to enrichment-results topic
             self.kafka_producer.send('enrichment-results', result_event)
             self.kafka_producer.flush()
             
-            logger.info(f"✅ Published result event to enrichment-results for task {task_id}")
-            logger.info(f"Processed {processed_records} records, {failed_records} failed")
+            logger.info(f"✅ Data enrichment completed: {enriched_count} records enriched")
             
         except Exception as e:
-            logger.error(f"Error processing task event: {e}", exc_info=True)
+            logger.error(f"❌ Error processing data enrichment: {e}", exc_info=True)
             
             # Publish failure event
             failure_event = {
@@ -105,21 +204,15 @@ class EnricherService:
                 "eventType": "enrichment_completed",
                 "data": {
                     "result": "failure",
-                    "processedRecords": 0,
-                    "failedRecords": event.get('data', {}).get('records', 0),
-                    "outputData": "enrichment_failed",
+                    "error": str(e),
                     "pipelineStage": "enrichment",
-                    "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                    "error": str(e)
+                    "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ')
                 }
             }
             
             self.kafka_producer.send('enrichment-results', failure_event)
             self.kafka_producer.flush()
-            logger.error(f"❌ Published failure event to enrichment-results")
     
-
-    #This is the function that will consume the task event from the enrichment-requests topic and process it by calling the process_task_event function
     def consume_task_events(self):
         """Consume task events from Kafka"""
         consumer = KafkaConsumer(
@@ -130,31 +223,30 @@ class EnricherService:
             group_id=f'{SERVICE_NAME}-group'
         )
         
-        logger.info(f"{SERVICE_NAME} started - listening for enrichment events")
+        logger.info(f"🚀 {SERVICE_NAME} started - listening for enrichment events")
         
         for message in consumer:
             try:
                 event = message.value
-                logger.info(f"Received task event: {event['eventType']}")
-                
                 event_type = event.get('eventType', 'unknown')
-                logger.info(f"Received task event: {event_type}")
                 
                 if event_type == 'enrichment_request':
+                    logger.info(f"🔍 Processing enrichment request")
                     self.process_task_event(event)
                 else:
-                    logger.debug(f"Skipping event type: {event_type}")
+                    logger.warning(f"⚠️ Ignoring event type: {event_type}")
                     
             except Exception as e:
-                logger.error(f"Error processing message: {e}", exc_info=True)
+                logger.error(f"💥 Error processing message: {e}", exc_info=True)
 
 def main():
     """Start the Enricher Service"""
-    logger.info(f"Starting {SERVICE_NAME} Service")
-    logger.info(f"Kafka: {KAFKA_BOOTSTRAP}")
+    logger.info(f"🚀 Starting {SERVICE_NAME} Service")
+    logger.info(f"🔌 Kafka: {KAFKA_BOOTSTRAP}")
+    logger.info(f"📦 MinIO: {MINIO_ENDPOINT}")
     
     # Wait for services to be ready
-    logger.info("Waiting 10 seconds for services to initialize...")
+    logger.info("⏳ Waiting 10 seconds for services to initialize...")
     time.sleep(10)
     
     # Start service

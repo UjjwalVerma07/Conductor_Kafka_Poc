@@ -183,22 +183,30 @@ class EnhancedSequentialEventRouter:
             logger.error(f"❌ Error sending to Conductor: {e}")
     
     def route_to_email_validation(self, event):
-        """Route to email validation stage"""
+        """Route to email validation stage with MinIO file processing"""
         try:
             #This is the workflow id and data that is sent from the Conductor to the Event Router.
             workflow_id = event.get('workflowId')
             data = event.get('data', {})
             
-            # Create email validation request
-            #This is the email validation request that is sent to the email validation microservice into the Kafka topic.
+            # Extract MinIO file information
+            input_bucket = data.get('input_bucket', 'raw-data')
+            input_key = data.get('input_key', 'customer_data_sample.csv')
+            output_bucket = data.get('output_bucket', 'email-validated')
+            output_key = data.get('output_key', f'email_validated_{workflow_id}.csv')
+            
+            # Create email validation request with MinIO file info
             email_request = {
                 'workflowId': workflow_id,
                 'taskId': 'email_validation_task',
                 'eventType': 'email_validation_request',
                 'data': {
-                    'inputData': data.get('inputData', 'raw_data'),
-                    'records': data.get('records', 100),
+                    'input_bucket': input_bucket,
+                    'input_key': input_key,
+                    'output_bucket': output_bucket,
+                    'output_key': output_key,
                     'pipelineStage': 'email_validation',
+                    'records': data.get('records', 1000),
                     'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ')
                 }
             }
@@ -208,32 +216,56 @@ class EnhancedSequentialEventRouter:
             self.kafka_producer.flush()
             
             # Update pipeline state
-            if workflow_id in self.pipeline_state:
+            if workflow_id not in self.pipeline_state:
+                self.pipeline_state[workflow_id] = {
+                    'stages_completed': [],
+                    'waiting_for': 'email_validation_completed',
+                    'data_flow': {},
+                    'file_flow': {
+                        'current_bucket': output_bucket,
+                        'current_key': output_key
+                    }
+                }
+            else:
                 self.pipeline_state[workflow_id]['waiting_for'] = 'email_validation_completed'
+                self.pipeline_state[workflow_id]['file_flow'] = {
+                    'current_bucket': output_bucket,
+                    'current_key': output_key
+                }
             
             logger.info(f"✅ Routed to email validation for workflow: {workflow_id}")
+            logger.info(f"📁 Input: {input_bucket}/{input_key}")
+            logger.info(f"📁 Output: {output_bucket}/{output_key}")
             
         except Exception as e:
             logger.error(f"❌ Error routing to email validation: {e}")
     
     def route_to_phone_validation(self, event):
-        """Route to phone validation stage"""
+        """Route to phone validation stage with MinIO file processing"""
         try:
             #This is the workflow id and data that is sent from the Conductor to the Event Router
             workflow_id = event.get('workflowId')
             data = event.get('data', {})
             
-            # Create phone validation request
-            #This is the phone validation request that is sent to the phone validation microservice into the Kafka topic.
+            # Extract MinIO file information
+            input_bucket = data.get('input_bucket', 'email-validated')
+            input_key = data.get('input_key', f'email_validated_{workflow_id}.csv')
+            output_bucket = data.get('output_bucket', 'phone-validated')
+            output_key = data.get('output_key', f'phone_validated_{workflow_id}.csv')
+            
+            # Create phone validation request with MinIO file info
             phone_request = {
                 'workflowId': workflow_id,
                 'taskId': 'phone_validation_task',
                 'eventType': 'phone_validation_request',
                 'data': {
-                    'inputData': data.get('inputData', 'email_validated_data'),
-                    'records': data.get('records', 95),
+                    'input_bucket': input_bucket,
+                    'input_key': input_key,
+                    'output_bucket': output_bucket,
+                    'output_key': output_key,
                     'pipelineStage': 'phone_validation',
                     'previousStage': 'email_validation',
+                    'records': data.get('records', 1000),
                     'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ')
                 }
             }
@@ -247,31 +279,45 @@ class EnhancedSequentialEventRouter:
             #This is the update of the pipeline state for the workflow id.
             if workflow_id in self.pipeline_state:
                 self.pipeline_state[workflow_id]['waiting_for'] = 'phone_validation_completed'
+                self.pipeline_state[workflow_id]['file_flow'] = {
+                    'current_bucket': output_bucket,
+                    'current_key': output_key
+                }
             
             logger.info(f"✅ Routed to phone validation for workflow: {workflow_id}")
+            logger.info(f"📁 Input: {input_bucket}/{input_key}")
+            logger.info(f"📁 Output: {output_bucket}/{output_key}")
             
         except Exception as e:
             logger.error(f"❌ Error routing to phone validation: {e}")
 
     
     def route_to_enrichment(self, event):
-        """Route to enrichment stage"""
+        """Route to enrichment stage with MinIO file processing"""
         try:
             #This is the workflow id and data that is sent from the Conductor to the Event Router.
             workflow_id = event.get('workflowId')
             data = event.get('data', {})
             
-            # Create enrichment request
-            #This is the enrichment request that is sent to the enrichment microservice to the Kafka topic.
+            # Extract MinIO file information
+            input_bucket = data.get('input_bucket', 'phone-validated')
+            input_key = data.get('input_key', f'phone_validated_{workflow_id}.csv')
+            output_bucket = data.get('output_bucket', 'enriched')
+            output_key = data.get('output_key', f'enriched_{workflow_id}.csv')
+            
+            # Create enrichment request with MinIO file info
             enrichment_request = {
                 'workflowId': workflow_id,
                 'taskId': 'enrichment_task',
                 'eventType': 'enrichment_request',
                 'data': {
-                    'inputData': data.get('inputData', 'phone_validated_data'),
-                    'records': data.get('records', 90),
+                    'input_bucket': input_bucket,
+                    'input_key': input_key,
+                    'output_bucket': output_bucket,
+                    'output_key': output_key,
                     'pipelineStage': 'enrichment',
                     'previousStage': 'phone_validation',
+                    'records': data.get('records', 1000),
                     'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ')
                 }
             }
@@ -283,18 +329,28 @@ class EnhancedSequentialEventRouter:
             # Update pipeline state
             if workflow_id in self.pipeline_state:
                 self.pipeline_state[workflow_id]['waiting_for'] = 'enrichment_completed'
+                self.pipeline_state[workflow_id]['file_flow'] = {
+                    'current_bucket': output_bucket,
+                    'current_key': output_key
+                }
             
             logger.info(f"✅ Routed to enrichment for workflow: {workflow_id}")
+            logger.info(f"📁 Input: {input_bucket}/{input_key}")
+            logger.info(f"📁 Output: {output_bucket}/{output_key}")
             
         except Exception as e:
             logger.error(f"❌ Error routing to enrichment: {e}")
     
     def route_to_completion(self, event):
-        """Route to pipeline completion"""
+        """Route to pipeline completion with MinIO file processing"""
         #This is the workflow id and data that is sent from Conductor to the Event Router.
         try:
             workflow_id = event.get('workflowId')
             data = event.get('data', {})
+            
+            # Extract final file information
+            final_bucket = data.get('final_bucket', 'enriched')
+            final_key = data.get('final_key', f'enriched_{workflow_id}.csv')
             
             # Create completion event
             #This is the completion event that is sent to the completion microservice to the Kafka topic.
@@ -303,8 +359,9 @@ class EnhancedSequentialEventRouter:
                 'taskId': 'pipeline_completion_task',
                 'eventType': 'pipeline_completed',
                 'data': {
-                    'finalData': data.get('inputData', 'enriched_data'),
-                    'records': data.get('records', 90),
+                    'final_bucket': final_bucket,
+                    'final_key': final_key,
+                    'records': data.get('records', 1000),
                     'pipelineStage': 'completed',
                     'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ')
                 }
@@ -316,6 +373,7 @@ class EnhancedSequentialEventRouter:
             self.kafka_producer.flush()
             
             logger.info(f"✅ Pipeline completed for workflow: {workflow_id}")
+            logger.info(f"📁 Final file: {final_bucket}/{final_key}")
             
         except Exception as e:
             logger.error(f"❌ Error routing to completion: {e}")

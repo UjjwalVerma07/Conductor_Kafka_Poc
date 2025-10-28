@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """
-Email Validator Service - Event-Driven
-Consumes events from Kafka and processes email validation
+Email Validator Service - MinIO File Processing
+Processes CSV files from MinIO, validates emails, uploads results
 """
 
 import os
 import json
 import time
 import logging
+import pandas as pd
+import re
 from kafka import KafkaConsumer, KafkaProducer
+from minio import Minio
+from minio.error import S3Error
+import io
 
 # Configure logging
 logging.basicConfig(
@@ -18,9 +23,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration
-#This is the kafka bootstrap server address for the email validator service
 KAFKA_BOOTSTRAP = os.getenv('KAFKA_BOOTSTRAP', 'localhost:9092')
 SERVICE_NAME = os.getenv('SERVICE_NAME', 'email-validator')
+MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT', 'minio:9000')
+MINIO_ACCESS_KEY = os.getenv('MINIO_ACCESS_KEY', 'minioadmin')
+MINIO_SECRET_KEY = os.getenv('MINIO_SECRET_KEY', 'minioadmin')
+MINIO_BUCKET = os.getenv('MINIO_BUCKET', 'email-validation')
 
 # Initialize Kafka producer
 kafka_producer = KafkaProducer(
@@ -29,75 +37,157 @@ kafka_producer = KafkaProducer(
 )
 
 class EmailValidatorService:
-    """Event-driven email validation service"""
+    """MinIO-based email validation service"""
     
     def __init__(self):
         self.kafka_producer = kafka_producer
+        self.minio_client = Minio(
+            MINIO_ENDPOINT,
+            access_key=MINIO_ACCESS_KEY,
+            secret_key=MINIO_SECRET_KEY,
+            secure=False
+        )
+        self._ensure_bucket_exists()
     
-    #This is the function that will validate the emails
-    #It will take the data as input and return the result of the validation
-    def validate_emails(self, data):
-        """Mock email validation logic"""
-        # Simulate processing time
-        time.sleep(2)
-        
-        # Mock validation results
-        result = {
-            'status': 'success',
-            'total_records': 100,
-            'valid_emails': 85,
-            'invalid_emails': 15,
-            'processing_time': '2s'
-        }
-        
-        logger.info(f"Email validation completed: {result}")
-        return result
+    def _ensure_bucket_exists(self):
+        """Ensure MinIO bucket exists"""
+        try:
+            if not self.minio_client.bucket_exists(MINIO_BUCKET):
+                self.minio_client.make_bucket(MINIO_BUCKET)
+                logger.info(f"✅ Created bucket: {MINIO_BUCKET}")
+            else:
+                logger.info(f"✅ Bucket exists: {MINIO_BUCKET}")
+        except S3Error as e:
+            logger.error(f"❌ Error creating bucket: {e}")
     
-    #This is the function that will process the task event and publish the result to the email-validation-results topic
+    def _ensure_output_bucket_exists(self, bucket_name):
+        """Ensure output bucket exists"""
+        try:
+            if not self.minio_client.bucket_exists(bucket_name):
+                self.minio_client.make_bucket(bucket_name)
+                logger.info(f"✅ Created output bucket: {bucket_name}")
+            else:
+                logger.info(f"✅ Output bucket exists: {bucket_name}")
+        except S3Error as e:
+            logger.error(f"❌ Error creating output bucket: {e}")
+    
+    def download_file(self, bucket, key):
+        """Download file from MinIO"""
+        try:
+            response = self.minio_client.get_object(bucket, key)
+            data = response.read()
+            response.close()
+            response.release_conn()
+            logger.info(f"✅ Downloaded file: {bucket}/{key}")
+            return data
+        except S3Error as e:
+            logger.error(f"❌ Error downloading file {bucket}/{key}: {e}")
+            raise
+    
+    def upload_file(self, bucket, key, data):
+        """Upload file to MinIO"""
+        try:
+            data_stream = io.BytesIO(data)
+            self.minio_client.put_object(
+                bucket, key, data_stream, len(data)
+            )
+            logger.info(f"✅ Uploaded file: {bucket}/{key}")
+        except S3Error as e:
+            logger.error(f"❌ Error uploading file {bucket}/{key}: {e}")
+            raise
+    
+    def validate_email(self, email):
+        """Validate single email address"""
+        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        return re.match(pattern, email) is not None
+    
+    def process_csv_file(self, csv_data):
+        """Process CSV file and validate emails"""
+        try:
+            # Read CSV from bytes
+            df = pd.read_csv(io.BytesIO(csv_data))
+            logger.info(f"📊 Processing CSV with {len(df)} rows")
+            
+            # Assume email column is named 'email'
+            if 'email' not in df.columns:
+                logger.error("❌ No 'email' column found in CSV")
+                return None, 0, 0
+            
+            # Validate emails
+            df['email_valid'] = df['email'].apply(self.validate_email)
+            
+            # Calculate statistics
+            total_records = len(df)
+            valid_emails = df['email_valid'].sum()
+            invalid_emails = total_records - valid_emails
+            
+            # Filter valid emails for output
+            valid_df = df[df['email_valid'] == True].drop('email_valid', axis=1)
+            
+            # Convert back to CSV
+            output_csv = valid_df.to_csv(index=False)
+            
+            logger.info(f"✅ Email validation completed: {valid_emails}/{total_records} valid")
+            return output_csv.encode('utf-8'), valid_emails, invalid_emails
+            
+        except Exception as e:
+            logger.error(f"❌ Error processing CSV: {e}")
+            raise
+    
     def process_task_event(self, event):
-        """Process task event and publish result"""
+        """Process task event with MinIO file operations"""
         try:
             workflow_id = event.get('workflowId')
             task_id = event.get('taskId')
             data = event.get('data', {})
-            input_data = data.get('inputData', 'raw_data')
-            records = data.get('records', 100)
             
-            logger.info(f"Processing email validation for workflow {workflow_id}, task {task_id}")
-            logger.info(f"Input data: {input_data}, Records: {records}")
+            # Extract MinIO file information
+            input_bucket = data.get('input_bucket')
+            input_key = data.get('input_key')
+            output_bucket = data.get('output_bucket')
+            output_key = data.get('output_key')
             
-            # Simulate email validation
-            result = self.validate_emails(input_data)
+            logger.info(f"📧 Processing email validation for workflow {workflow_id}")
+            logger.info(f"📁 Input: {input_bucket}/{input_key}")
+            logger.info(f"📁 Output: {output_bucket}/{output_key}")
             
-            # Calculate processed records (simulate some failures)
-            processed_records = int(records * 0.95)  # 95% success rate
-            failed_records = records - processed_records
+            # Ensure output bucket exists
+            self._ensure_output_bucket_exists(output_bucket)
             
-            # Publish result event to email-validation-results topic
+            # Download input file
+            input_data = self.download_file(input_bucket, input_key)
+            
+            # Process CSV file
+            output_data, valid_count, invalid_count = self.process_csv_file(input_data)
+            
+            # Upload processed file
+            self.upload_file(output_bucket, output_key, output_data)
+            
+            # Publish result event
             result_event = {
-                "workflowId": workflow_id,
-                "taskId": task_id,
-                "eventType": "email_validation_completed",
-                "data": {
-                    "result": "success",
-                    "processedRecords": processed_records,
-                    "failedRecords": failed_records,
-                    "outputData": "email_validated_data",
-                    "pipelineStage": "email_validation",
-                    "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                    "validationResult": result
-                }
-            }
+                       "workflowId": workflow_id,
+                       "taskId": task_id,
+                       "eventType": "email_validation_completed",
+                       "data": {
+                           "input_bucket": input_bucket,
+                           "input_key": input_key,
+                           "output_bucket": output_bucket,
+                           "output_key": output_key,
+                           "result": "success",
+                           "processedRecords": int(valid_count),
+                           "failedRecords": int(invalid_count),
+                           "pipelineStage": "email_validation",
+                           "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ')
+                       }
+                   }
             
-            # Publish to email-validation-results topic
             self.kafka_producer.send('email-validation-results', result_event)
             self.kafka_producer.flush()
             
-            logger.info(f"✅ Published result event to email-validation-results for task {task_id}")
-            logger.info(f"Processed {processed_records} records, {failed_records} failed")
+            logger.info(f"✅ Email validation completed: {valid_count} valid, {invalid_count} invalid")
             
         except Exception as e:
-            logger.error(f"Error processing task event: {e}", exc_info=True)
+            logger.error(f"❌ Error processing email validation: {e}", exc_info=True)
             
             # Publish failure event
             failure_event = {
@@ -106,20 +196,15 @@ class EmailValidatorService:
                 "eventType": "email_validation_completed",
                 "data": {
                     "result": "failure",
-                    "processedRecords": 0,
-                    "failedRecords": event.get('data', {}).get('records', 0),
-                    "outputData": "validation_failed",
+                    "error": str(e),
                     "pipelineStage": "email_validation",
-                    "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                    "error": str(e)
+                    "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ')
                 }
             }
             
             self.kafka_producer.send('email-validation-results', failure_event)
             self.kafka_producer.flush()
-            logger.error(f"❌ Published failure event to email-validation-results")
     
-    #This is the function that will consume the task event from the email-validation-requests topic and process it by calling the process_task_event function
     def consume_task_events(self):
         """Consume task events from Kafka"""
         consumer = KafkaConsumer(
@@ -130,39 +215,30 @@ class EmailValidatorService:
             group_id=f'{SERVICE_NAME}-group'
         )
         
-        logger.info(f"{SERVICE_NAME} started - listening for email validation events")
+        logger.info(f"🚀 {SERVICE_NAME} started - listening for email validation events")
         
         for message in consumer:
             try:
                 event = message.value
-                logger.info(f"🔍 Raw message value type: {type(event)}")
-                logger.info(f"🔍 Raw message value: {event}")
+                event_type = event.get('eventType', 'unknown')
                 
-                if isinstance(event, dict):
-                    event_type = event.get('eventType', 'unknown')
-                    logger.info(f"📨 Event type: {event_type}")
-                    logger.info(f"📨 Full event structure: {event}")
-                    
-                    if event_type == 'email_validation_request':
-                        logger.info(f"✅ MATCH! Processing email validation request for workflow: {event.get('workflowId')}")
-                        logger.info(f"✅ Calling process_task_event with: {event}")
-                        self.process_task_event(event)
-                        logger.info(f"✅ process_task_event completed")
-                    else:
-                        logger.warning(f"❌ NO MATCH! Expected 'email_validation_request', got: '{event_type}'")
+                if event_type == 'email_validation_request':
+                    logger.info(f"📧 Processing email validation request")
+                    self.process_task_event(event)
                 else:
-                    logger.error(f"❌ Event is not a dictionary! Type: {type(event)}, Value: {event}")
+                    logger.warning(f"⚠️ Ignoring event type: {event_type}")
                     
             except Exception as e:
                 logger.error(f"💥 Error processing message: {e}", exc_info=True)
 
 def main():
     """Start the Email Validator Service"""
-    logger.info(f"Starting {SERVICE_NAME} Service")
-    logger.info(f"Kafka: {KAFKA_BOOTSTRAP}")
+    logger.info(f"🚀 Starting {SERVICE_NAME} Service")
+    logger.info(f"🔌 Kafka: {KAFKA_BOOTSTRAP}")
+    logger.info(f"📦 MinIO: {MINIO_ENDPOINT}")
     
     # Wait for services to be ready
-    logger.info("Waiting 10 seconds for services to initialize...")
+    logger.info("⏳ Waiting 10 seconds for services to initialize...")
     time.sleep(10)
     
     # Start service
