@@ -153,6 +153,10 @@ class PhoneValidatorService:
             output_bucket = data.get('output_bucket')
             output_key = data.get('output_key')
             
+            # Fix null values in output_key by using workflow_id
+            if output_key and 'null' in output_key:
+                output_key = f'phone_validated_{workflow_id}.csv'
+            
             logger.info(f"📱 Processing phone validation for workflow {workflow_id}")
             logger.info(f"📁 Input: {input_bucket}/{input_key}")
             logger.info(f"📁 Output: {output_bucket}/{output_key}")
@@ -187,7 +191,10 @@ class PhoneValidatorService:
                 }
             }
             
-            self.kafka_producer.send('phone-validation-results', result_event)
+            # Publish directly to Conductor
+            self.kafka_producer.send('conductor-events', result_event)
+            """Publish to this Kafka topic also we will update it later"""
+            #self.kafka_producer.send('phone-validation-results', result_event)
             self.kafka_producer.flush()
             
             logger.info(f"✅ Phone validation completed: {valid_count} valid, {invalid_count} invalid")
@@ -208,7 +215,9 @@ class PhoneValidatorService:
                 }
             }
             
-            self.kafka_producer.send('phone-validation-results', failure_event)
+            # Publish failure directly to Conductor
+            #Here also we are directly publishing to the Conductor events topic
+            self.kafka_producer.send('conductor-events', failure_event)
             self.kafka_producer.flush()
     
     def consume_task_events(self):
@@ -226,6 +235,15 @@ class PhoneValidatorService:
         for message in consumer:
             try:
                 event = message.value
+                
+                # Handle both JSON object and string cases
+                if isinstance(event, str):
+                    try:
+                        event = json.loads(event)
+                    except json.JSONDecodeError:
+                        logger.error(f"❌ Failed to parse JSON string: {event}")
+                        continue
+                
                 event_type = event.get('eventType', 'unknown')
                 
                 if event_type == 'phone_validation_request':
