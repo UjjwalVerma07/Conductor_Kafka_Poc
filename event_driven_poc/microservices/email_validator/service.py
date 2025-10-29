@@ -147,9 +147,18 @@ class EmailValidatorService:
             output_bucket = data.get('output_bucket')
             output_key = data.get('output_key')
             
+            # Fix null values in output_key by using workflow_id
+            logger.info(f"🔍 Before fix - output_key: {output_key}")
+            if output_key and 'null' in output_key:
+                output_key = f'email_validated_{workflow_id}.csv'
+                logger.info(f"🔧 Fixed output_key to: {output_key}")
+            else:
+                logger.info(f"🔍 No fix needed - output_key: {output_key}")
+            
             logger.info(f"📧 Processing email validation for workflow {workflow_id}")
             logger.info(f"📁 Input: {input_bucket}/{input_key}")
             logger.info(f"📁 Output: {output_bucket}/{output_key}")
+            logger.info(f"🔍 Raw data received: {data}")
             
             # Ensure output bucket exists
             self._ensure_output_bucket_exists(output_bucket)
@@ -170,7 +179,7 @@ class EmailValidatorService:
                        "eventType": "email_validation_completed",
                        "data": {
                            "input_bucket": input_bucket,
-                           "input_key": input_key,
+                           "input_key": input_key, 
                            "output_bucket": output_bucket,
                            "output_key": output_key,
                            "result": "success",
@@ -181,7 +190,12 @@ class EmailValidatorService:
                        }
                    }
             
-            self.kafka_producer.send('email-validation-results', result_event)
+            # Publish directly to Conductor
+            self.kafka_producer.send('conductor-events', result_event)
+
+
+            """Publish to this Kafka topic also for now then we will update it later"""
+            #self.kafka_producer.send('email-validation-results', result_event)
             self.kafka_producer.flush()
             
             logger.info(f"✅ Email validation completed: {valid_count} valid, {invalid_count} invalid")
@@ -202,7 +216,9 @@ class EmailValidatorService:
                 }
             }
             
-            self.kafka_producer.send('email-validation-results', failure_event)
+            # Publish failure directly to Conductor
+            #Here also we are dirctly publishing to the Conductor events topoic 
+            self.kafka_producer.send('conductor-events', failure_event)
             self.kafka_producer.flush()
     
     def consume_task_events(self):
@@ -220,6 +236,15 @@ class EmailValidatorService:
         for message in consumer:
             try:
                 event = message.value
+                
+                # Handle both JSON object and string cases
+                if isinstance(event, str):
+                    try:
+                        event = json.loads(event)
+                    except json.JSONDecodeError:
+                        logger.error(f"❌ Failed to parse JSON string: {event}")
+                        continue
+                
                 event_type = event.get('eventType', 'unknown')
                 
                 if event_type == 'email_validation_request':

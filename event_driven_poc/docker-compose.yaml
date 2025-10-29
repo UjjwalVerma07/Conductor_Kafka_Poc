@@ -113,21 +113,7 @@ services:
       start_period: 60s
 
   # Note: Conductor UI is available at http://localhost:8080 (built into the server)
-
-  # Event Router
-  event-router:
-    build: ./event_router
-    container_name: event-router
-    depends_on:
-      kafka:
-        condition: service_healthy
-    environment:
-      - KAFKA_BOOTSTRAP=kafka:9092
-      - CONDUCTOR_SERVER_URL=http://conductor-server:8080/api
-    networks:
-      - event-driven-net
-    restart: unless-stopped
-    command: python3 enhanced_sequential_router.py
+  # Event Router removed - using direct Conductor-microservice integration
 
   # Email Validator Service
   email-validator:

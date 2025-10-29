@@ -155,6 +155,10 @@ class EnricherService:
             output_bucket = data.get('output_bucket')
             output_key = data.get('output_key')
             
+            # Fix null values in output_key by using workflow_id
+            if output_key and 'null' in output_key:
+                output_key = f'enriched_{workflow_id}.csv'
+            
             logger.info(f"🔍 Processing data enrichment for workflow {workflow_id}")
             logger.info(f"📁 Input: {input_bucket}/{input_key}")
             logger.info(f"📁 Output: {output_bucket}/{output_key}")
@@ -189,7 +193,10 @@ class EnricherService:
                 }
             }
             
-            self.kafka_producer.send('enrichment-results', result_event)
+            # Publish directly to Conductor
+            self.kafka_producer.send('conductor-events', result_event)
+            """Publish to this Kafka topic also we will update it later"""
+            #self.kafka_producer.send('enrichment-results', result_event)
             self.kafka_producer.flush()
             
             logger.info(f"✅ Data enrichment completed: {enriched_count} records enriched")
@@ -210,7 +217,9 @@ class EnricherService:
                 }
             }
             
-            self.kafka_producer.send('enrichment-results', failure_event)
+            # Publish failure directly to Conductor
+            #Here also we are directly publishing to the Conductor events topic
+            self.kafka_producer.send('conductor-events', failure_event)
             self.kafka_producer.flush()
     
     def consume_task_events(self):
@@ -228,6 +237,15 @@ class EnricherService:
         for message in consumer:
             try:
                 event = message.value
+                
+                # Handle both JSON object and string cases
+                if isinstance(event, str):
+                    try:
+                        event = json.loads(event)
+                    except json.JSONDecodeError:
+                        logger.error(f"❌ Failed to parse JSON string: {event}")
+                        continue
+                
                 event_type = event.get('eventType', 'unknown')
                 
                 if event_type == 'enrichment_request':
