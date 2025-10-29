@@ -176,7 +176,7 @@ class EmailValidatorService:
             result_event = {
                        "workflowId": workflow_id,
                        "taskId": task_id,
-                       "eventType": "email_validation_completed",
+                       "eventType": "email_validation_completed", #Here we are publishing the event Topic by directly specifying the sink 
                        "data": {
                            "input_bucket": input_bucket,
                            "input_key": input_key, 
@@ -190,7 +190,7 @@ class EmailValidatorService:
                        }
                    }
             
-            # Publish directly to Conductor
+            # Publish directly to Conductor (NO Event Router is used here )
             self.kafka_producer.send('conductor-events', result_event)
 
 
