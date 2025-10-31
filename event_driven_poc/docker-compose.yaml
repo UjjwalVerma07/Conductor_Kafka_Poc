@@ -172,3 +172,22 @@ services:
     networks:
       - event-driven-net
     restart: unless-stopped
+
+  # Airflow Adapter Service (Phase 1: Core Integration)
+  airflow-adapter:
+    build: ./microservices/airflow_adapter
+    container_name: airflow-adapter-event
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      - KAFKA_BOOTSTRAP=kafka:9092
+      - SERVICE_NAME=airflow-adapter
+      - AIRFLOW_HOST=papdpsaplr001l:8080
+      - AIRFLOW_USERNAME=airflow
+      - AIRFLOW_PASSWORD=airflow
+      - POLL_INTERVAL=30
+      - MAX_TIMEOUT=3600
+    networks:
+      - event-driven-net
+    restart: unless-stopped

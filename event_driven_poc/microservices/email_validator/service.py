@@ -207,7 +207,7 @@ class EmailValidatorService:
             failure_event = {
                 "workflowId": event.get('workflowId', 'unknown'),
                 "taskId": event.get('taskId', 'unknown'),
-                "eventType": "email_validation_completed",
+                "eventType": "email_validation_completed", 
                 "data": {
                     "result": "failure",
                     "error": str(e),
@@ -272,3 +272,12 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+
+"""Instead of this Micorservice we will use our existing services that we have already created """
+"""That wiill do the curl commmand to the airflow to trigger multiple processes that exist in a particular service"""
+"""Now Inside This service we will do the following steps:
+1. First we will do the MOVEIN -> in this we will need to push the file path to the Airflow Server
+2. Airflow will execute the process and call out the steps that are defined in the DAG
+3. MOVEOUT -> in this we will need to push the file that is processed by the Airflow Server to the MINIO Server"""
