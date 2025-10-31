@@ -16,7 +16,7 @@
             "taskId": "email_validation_task",
             "eventType": "email_validation_request",
             "data": {
-              "input_bucket": "raw-data",
+              "input_bucket": "raw-data",                                               
               "input_key": "customer_data_sample.csv",
               "output_bucket": "email-validated",
               "output_key": "email_validated_${workflow.instanceId}.csv",
