@@ -1,0 +1,21 @@
+{
+  "conf": {
+    "execution_id": "WBNameParse",
+    "jobid": "1000861509-2747",
+    "metadata_url": "s3://958825666686-dpservices-testing-data/conductor-poc/1000861509.WBNameParse.json",
+    "stats_url": "scp://abinitio@papdpsetld003l.intra.infousa.com//abi/log/UQU_1000861509.2771.stats.jsonl"
+  },
+  "dag_id": "nua-nameparse-process-stage-v02-00-06-tiny",
+  "dag_run_id": "1000861509-2747",
+  "data_interval_end": "2025-11-07T03:22:43.970575+00:00",
+  "data_interval_start": "2025-11-07T03:22:43.970575+00:00",
+  "end_date": null,
+  "execution_date": "2025-11-07T03:22:43.970575+00:00",
+  "external_trigger": true,
+  "last_scheduling_decision": null,
+  "logical_date": "2025-11-07T03:22:43.970575+00:00",
+  "note": null,
+  "run_type": "manual",
+  "start_date": null,
+  "state": "queued"
+}
