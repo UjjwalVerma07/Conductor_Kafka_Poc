@@ -1,0 +1,6 @@
+{
+  "detail": null,
+  "status": 403,
+  "title": "Forbidden",
+  "type": "https://airflow.apache.org/docs/apache-airflow/2.10.1/stable-rest-api-ref.html#section/Errors/PermissionDenied"
+}

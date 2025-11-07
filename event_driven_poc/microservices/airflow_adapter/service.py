@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Airflow Adapter Service - Simplified Phase 1
-Executes the test_1 script to trigger Airflow DAGs via Kafka events
+Airflow Adapter Service
+Simple service that triggers Airflow DAGs via script and notifies Conductor on completion
 """
 
 import os
@@ -9,6 +9,7 @@ import json
 import time
 import logging
 import subprocess
+import requests
 from kafka import KafkaConsumer, KafkaProducer
 
 # Configure logging
@@ -22,10 +23,13 @@ logger = logging.getLogger(__name__)
 KAFKA_BOOTSTRAP = os.getenv('KAFKA_BOOTSTRAP', 'localhost:9092')
 SERVICE_NAME = os.getenv('SERVICE_NAME', 'airflow-adapter')
 
-# Airflow Configuration (for script parameters)
-AIRFLOW_HOST = os.getenv('AIRFLOW_HOST', 'papdpsaplr001l:8080')
-AIRFLOW_USERNAME = os.getenv('AIRFLOW_USERNAME', 'airflow')
-AIRFLOW_PASSWORD = os.getenv('AIRFLOW_PASSWORD', 'airflow')
+# MWAA Configuration
+MWAA_ENDPOINT = os.getenv('MWAA_ENDPOINT', 'https://a53c6d7a-ec07-465a-9824-6cc199145a7a-vpce.c75.us-east-1.airflow.amazonaws.com:443')
+MWAA_SESSION_TOKEN = os.getenv('MWAA_SESSION_TOKEN', '')
+
+# DAG Monitoring Configuration
+DAG_POLL_INTERVAL = int(os.getenv('DAG_POLL_INTERVAL', '10'))  # seconds between status checks
+DAG_MAX_WAIT_TIME = int(os.getenv('DAG_MAX_WAIT_TIME', '3600'))  # max time to wait (1 hour default)
 
 # Script path
 SCRIPT_PATH = os.path.join(os.path.dirname(__file__), 'trigger_airflow.sh')
@@ -38,7 +42,7 @@ kafka_producer = KafkaProducer(
 
 
 class AirflowAdapterService:
-    """Simplified Airflow Adapter Service - Executes test_1 script"""
+    """Airflow Adapter Service - Triggers Airflow DAGs and notifies Conductor"""
     
     def __init__(self):
         self.kafka_producer = kafka_producer
@@ -49,55 +53,155 @@ class AirflowAdapterService:
         
         logger.info(f"✅ Airflow Adapter Service initialized")
         logger.info(f"   Script: {self.script_path}")
-        logger.info(f"   Airflow Host: {AIRFLOW_HOST}")
     
-    def execute_airflow_script(self, jobid, metadata_url, execution_id, dag_id=None):
-        """Execute the trigger_airflow.sh script"""
+    def trigger_dag_run(self, jobid, metadata_url, execution_id, dag_id=None):
+        """Trigger Airflow DAG run and return dag_run_id"""
         try:
-            dag_id = dag_id or 'nua-culturecoding-process'
+            dag_id = dag_id or 'nua-nameparse-process-stage-v02-00-06-tiny'
             
-            logger.info(f"🚀 Executing Airflow trigger script")
+            logger.info(f"🚀 Triggering Airflow DAG")
             logger.info(f"   DAG ID: {dag_id}")
             logger.info(f"   Job ID: {jobid}")
             logger.info(f"   Metadata URL: {metadata_url}")
             logger.info(f"   Execution ID: {execution_id}")
             
-            # Execute the bash script with parameters
+            # Execute the bash script with environment variables
+            env = os.environ.copy()
+            env.update({
+                'JOBID': jobid,
+                'METADATA_URL': metadata_url or '',
+                'EXECUTION_ID': execution_id,
+                'DAG_ID': dag_id
+            })
+            
+            # Pass MWAA config
+            if MWAA_ENDPOINT:
+                env['MWAA_ENDPOINT'] = MWAA_ENDPOINT
+            if MWAA_SESSION_TOKEN:
+                env['MWAA_SESSION_TOKEN'] = MWAA_SESSION_TOKEN
+            
             result = subprocess.run(
-                [
-                    '/bin/bash',
-                    self.script_path,
-                    jobid,           # $1
-                    metadata_url,    # $2
-                    execution_id,    # $3
-                    dag_id,          # $4
-                    AIRFLOW_HOST,    # $5
-                    AIRFLOW_USERNAME,# $6
-                    AIRFLOW_PASSWORD # $7
-                ],
+                ['/bin/bash', self.script_path],
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=60,
+                env=env
             )
             
             if result.returncode == 0:
+                # Parse the response to get dag_run_id
+                try:
+                    response_data = json.loads(result.stdout)
+                    dag_run_id = response_data.get('dag_run_id', jobid)
                 logger.info(f"✅ Airflow DAG triggered successfully")
-                if result.stdout:
-                    logger.debug(f"   Script output: {result.stdout}")
-                return True, result.stdout
+                    logger.info(f"   DAG Run ID: {dag_run_id}")
+                    return True, dag_run_id
+                except json.JSONDecodeError:
+                    # If response is not JSON, assume jobid is the dag_run_id
+                    logger.warning(f"⚠️ Could not parse script response as JSON, using jobid as dag_run_id")
+                    return True, jobid
             else:
                 error_msg = f"Script execution failed: {result.stderr or result.stdout}"
                 logger.error(f"❌ {error_msg}")
-                return False, error_msg
+                return False, None
                 
         except subprocess.TimeoutExpired:
             error_msg = "Script execution timed out"
             logger.error(f"❌ {error_msg}")
-            return False, error_msg
+            return False, None
         except Exception as e:
             error_msg = f"Error executing script: {e}"
             logger.error(f"❌ {error_msg}")
-            return False, error_msg
+            return False, None
+    
+    def check_dag_run_status(self, dag_id, dag_run_id):
+        """Check the status of a DAG run using Airflow API"""
+        try:
+            endpoint = MWAA_ENDPOINT
+            session_token = MWAA_SESSION_TOKEN
+            
+            if not session_token:
+                logger.error("❌ MWAA_SESSION_TOKEN not configured")
+                return None, "Session token not configured"
+            
+            # Build API URL
+            api_url = f"{endpoint}/api/v1/dags/{dag_id}/dagRuns/{dag_run_id}"
+            
+            # Make API call
+            response = requests.get(
+                api_url,
+                cookies={'session': session_token},
+                headers={'Content-Type': 'application/json'},
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                dag_run_data = response.json()
+                state = dag_run_data.get('state', 'unknown')
+                return state, None
+            elif response.status_code == 404:
+                return None, f"DAG run not found: {dag_run_id}"
+            else:
+                return None, f"API error: {response.status_code} - {response.text}"
+                
+        except requests.exceptions.RequestException as e:
+            return None, f"Network error: {str(e)}"
+        except Exception as e:
+            return None, f"Error checking status: {str(e)}"
+    
+    def wait_for_dag_completion(self, dag_id, dag_run_id, timeout=None):
+        """
+        Poll DAG run status until it completes (success or failed)
+        
+        Returns:
+            (success: bool, final_state: str, error_message: str)
+        """
+        timeout = timeout or DAG_MAX_WAIT_TIME
+        start_time = time.time()
+        poll_interval = DAG_POLL_INTERVAL
+        
+        logger.info(f"⏳ Monitoring DAG run: {dag_run_id}")
+        logger.info(f"   Poll interval: {poll_interval}s, Max wait: {timeout}s")
+        
+        while True:
+            # Check if timeout exceeded
+            elapsed = time.time() - start_time
+            if elapsed > timeout:
+                logger.error(f"❌ Timeout waiting for DAG run to complete ({timeout}s)")
+                return False, 'timeout', f"DAG run did not complete within {timeout} seconds"
+            
+            # Check status
+            state, error = self.check_dag_run_status(dag_id, dag_run_id)
+            
+            if error:
+                logger.error(f"❌ Error checking status: {error}")
+                return False, 'error', error
+            
+            if state is None:
+                logger.warning(f"⚠️ Could not determine DAG run status")
+                time.sleep(poll_interval)
+                continue
+            
+            logger.info(f"📊 DAG Run Status: {state} (elapsed: {int(elapsed)}s)")
+            
+            # Check if DAG run is complete
+            if state in ['success', 'failed', 'skipped', 'upstream_failed']:
+                if state == 'success':
+                    logger.info(f"✅ DAG run completed successfully")
+                    return True, state, None
+                else:
+                    logger.error(f"❌ DAG run completed with state: {state}")
+                    return False, state, f"DAG run ended with state: {state}"
+            
+            # Still running, wait and check again
+            if state in ['queued', 'running', 'up_for_retry', 'up_for_reschedule']:
+                time.sleep(poll_interval)
+                continue
+            
+            # Unknown state
+            logger.warning(f"⚠️ Unknown DAG run state: {state}, continuing to monitor...")
+            time.sleep(poll_interval)
+    
     
     def publish_completion_event(self, workflow_id, task_id, dag_id, jobid, 
                                   status, error_message=None, metadata_url=None):
@@ -137,53 +241,72 @@ class AirflowAdapterService:
             logger.error(f"❌ Error publishing completion event: {e}", exc_info=True)
     
     def process_task_event(self, event):
-        """Process a task event from Kafka"""
+        """Process a task event from Kafka - Simple flow: trigger script and notify Conductor"""
         try:
             workflow_id = event.get('workflowId')
             task_id = event.get('taskId')
             data = event.get('data', {})
             
             # Extract Airflow configuration
-            dag_id = data.get('dag_id', 'nua-culturecoding-process')
-            execution_id = data.get('execution_id', 'WBCultureCoding')
+            dag_id = data.get('dag_id', 'nua-nameparse-process-stage-v02-00-06-tiny')
+            execution_id = data.get('execution_id', 'WBNameParse')
+            metadata_url = data.get('metadata_url')  # Expected to be provided in event
             
             # Generate jobid (use workflow instance ID if provided, else generate)
             jobid = data.get('jobid') or workflow_id or f"job-{int(time.time())}"
             
-            # Construct metadata_url from template or use provided
-            metadata_url_template = data.get('metadata_url_template')
-            if metadata_url_template:
-                metadata_url = metadata_url_template.format(jobid=jobid)
-            else:
-                metadata_url = data.get('metadata_url', 
-                    f"scp://dpsadmin@papdpsetld001l//intstripe/abinitio/temp/unit-testing-prod/culture_coding/stcdpsetlp008l/{jobid}/{jobid}.1.meta.{jobid}.3.sub.new.json")
-            
-            logger.info(f"🔧 Processing Airflow trigger request")
+            logger.info(f"📥 Processing Airflow trigger request")
             logger.info(f"   Workflow ID: {workflow_id}")
             logger.info(f"   Task ID: {task_id}")
             logger.info(f"   DAG ID: {dag_id}")
             logger.info(f"   Job ID: {jobid}")
+            logger.info(f"   Metadata URL: {metadata_url}")
+            logger.info(f"   Execution ID: {execution_id}")
             
-            # Execute the Airflow trigger script
-            success, output = self.execute_airflow_script(
+            # Step 1: Trigger the DAG run
+            trigger_success, dag_run_id = self.trigger_dag_run(
                 jobid=jobid,
                 metadata_url=metadata_url,
                 execution_id=execution_id,
                 dag_id=dag_id
             )
             
-            # Publish completion event
+            if not trigger_success or not dag_run_id:
+                # Failed to trigger DAG
+                logger.error(f"❌ Failed to trigger DAG run")
+                self.publish_completion_event(
+                    workflow_id=workflow_id,
+                    task_id=task_id,
+                    dag_id=dag_id,
+                    jobid=jobid,
+                    status="failed",
+                    error_message="Failed to trigger DAG run",
+                    metadata_url=metadata_url
+                )
+                return
+            
+            # Step 2: Wait for DAG run to complete
+            logger.info(f"⏳ Waiting for DAG run to complete: {dag_run_id}")
+            dag_success, final_state, error_message = self.wait_for_dag_completion(
+                dag_id=dag_id,
+                dag_run_id=dag_run_id
+            )
+            
+            # Step 3: Publish completion event to Conductor
             self.publish_completion_event(
                 workflow_id=workflow_id,
                 task_id=task_id,
                 dag_id=dag_id,
                 jobid=jobid,
-                status="success" if success else "failed",
-                error_message=None if success else output,
+                status="success" if dag_success else "failed",
+                error_message=error_message,
                 metadata_url=metadata_url
             )
             
             logger.info(f"✅ Airflow task completed for workflow {workflow_id}")
+            logger.info(f"   DAG Run ID: {dag_run_id}")
+            logger.info(f"   Final State: {final_state}")
+            logger.info(f"   Status: {'success' if dag_success else 'failed'}")
             
         except Exception as e:
             logger.error(f"❌ Error processing Airflow task event: {e}", exc_info=True)
@@ -214,7 +337,6 @@ class AirflowAdapterService:
         
         logger.info(f"🚀 {SERVICE_NAME} started - listening for Airflow trigger events")
         logger.info(f"   Kafka Topic: airflow-trigger-requests")
-        logger.info(f"   Airflow Host: {AIRFLOW_HOST}")
         
         for message in consumer:
             try:
@@ -244,7 +366,6 @@ def main():
     """Start the Airflow Adapter Service"""
     logger.info(f"🚀 Starting {SERVICE_NAME} Service")
     logger.info(f"🔌 Kafka: {KAFKA_BOOTSTRAP}")
-    logger.info(f"☁️ Airflow: {AIRFLOW_HOST}")
     
     # Wait for services to be ready
     logger.info("⏳ Waiting 10 seconds for services to initialize...")

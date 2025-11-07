@@ -1,71 +1,43 @@
 #!/bin/bash
 
-function test_nameparse {
+# Get parameters from environment variables (set by service.py)
+JOBID="${JOBID:-1000861509}"
+METADATA_URL="${METADATA_URL:-s3://958825666686-dpservices-testing-data/conductor-poc/1000861509.WBNameParse.json}"
+EXECUTION_ID="${EXECUTION_ID:-WBNameParse}"
+DAG_ID="${DAG_ID:-nua-nameparse-process-stage-v02-00-06-tiny}"
+MWAA_ENDPOINT="${MWAA_ENDPOINT:-https://a53c6d7a-ec07-465a-9824-6cc199145a7a-vpce.c75.us-east-1.airflow.amazonaws.com:443}"
+MWAA_SESSION_TOKEN="${MWAA_SESSION_TOKEN:-2f02e33a-98c7-407d-b446-3daff8eb1d3b.9KxQbGdQ5UZ2eWHmoOXjc7cDi2s}"
 
-  # Base job details
-  jobid="1000861509"
+# Optional stats_url (can be provided in event data if needed)
+STATS_URL="${STATS_URL:-}"
 
-  metadata_url="scp://abinitio@papdpsetld003l.intra.infousa.com//home/abinitio/UQU.devm/output/${jobid}.WBNameParse.json"
+# Make jobid unique by appending session ID
+SESSION_ID=$$
+JOBID="${JOBID}-${SESSION_ID}"
 
-  stats_url="scp://abinitio@papdpsetld003l.intra.infousa.com//abi/log/UQU_${jobid}.2771.stats.jsonl"
+echo "Triggering Airflow DAG: ${DAG_ID}"
+echo "Job ID: ${JOBID}"
+echo "Metadata URL: ${METADATA_URL}"
 
-  execution_id="WBNameParse"
+# Build the JSON payload
+CONF_JSON="{\"jobid\":\"${JOBID}\",\"metadata_url\":\"${METADATA_URL}\",\"execution_id\":\"${EXECUTION_ID}\""
 
-  dagid="nua-nameparse-process-stage-v02-00-06-tiny"
+# Add stats_url if provided
+if [ -n "${STATS_URL}" ]; then
+  CONF_JSON="${CONF_JSON},\"stats_url\":\"${STATS_URL}\""
+fi
 
-  # Session identifier (use first arg or fallback to PID)
-  session=${1:-$$}
+CONF_JSON="${CONF_JSON}}"
 
-  echo "Session ID: $session"
+# Trigger the DAG run
+curl -X POST "${MWAA_ENDPOINT}/api/v1/dags/${DAG_ID}/dagRuns" \
+     --silent \
+     -b "session=${MWAA_SESSION_TOKEN}" \
+     -H 'Content-Type: application/json' \
+     --data-binary "{
+       \"dag_run_id\": \"${JOBID}\",
+       \"conf\": ${CONF_JSON}
+     }"
 
-  # Make the jobid unique per run
-  jobid="${jobid}-${session}"
-
-  echo "Job ID: $jobid"
-  echo "DAG ID: $dagid"
-  echo "Metadata URL: $metadata_url"
-  echo "Stats URL: $stats_url"
-  echo "Execution ID: $execution_id"
-  echo ""
-
-  # Ensure the DAG is unpaused (active)
-  echo "Unpausing DAG..."
-  curl -X PATCH http://papdpsaplr001l:8080/api/v1/dags/${dagid} \
-       --basic --user airflow:airflow \
-       -H 'Content-Type: application/json' \
-       --data-binary "{\"is_paused\":false}"
-
-  echo ""
-  echo "Triggering DAG run..."
-
-  # Trigger the DAG run
-  curl -X POST http://papdpsaplr001l:8080/api/v1/dags/${dagid}/dagRuns \
-       --basic --user airflow:airflow \
-       -H 'Content-Type: application/json' \
-       --data-binary "{
-         \"dag_run_id\": \"${jobid}\",
-         \"conf\": {
-           \"jobid\": \"${jobid}\",
-           \"metadata_url\": \"${metadata_url}\",
-           \"execution_id\": \"${execution_id}\",
-           \"stats_url\": \"${stats_url}\"
-         }
-       }"
-
-  # Return the curl exit code
-  return_code=$?
-  echo ""
-  echo "Exit code: $return_code"
-  echo ""
-  echo "View DAG execution at:"
-  echo "http://nua-stage.intra.infousa.com:8080/dags/${dagid}/grid"
-  echo "Job ID: ${jobid}"
-  
-  return $return_code
-}
-
-# Run the function
-test_nameparse
-
+# Return the curl exit code
 exit $?
-

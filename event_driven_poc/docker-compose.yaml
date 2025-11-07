@@ -173,12 +173,14 @@ services:
       - event-driven-net
     restart: unless-stopped
 
-  # Airflow Adapter Service (Phase 1: Core Integration)
+  # Airflow Adapter Service (Phase 1 + Phase 2: MOVEIN)
   airflow-adapter:
     build: ./microservices/airflow_adapter
     container_name: airflow-adapter-event
     depends_on:
       kafka:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     environment:
       - KAFKA_BOOTSTRAP=kafka:9092
@@ -186,8 +188,20 @@ services:
       - AIRFLOW_HOST=papdpsaplr001l:8080
       - AIRFLOW_USERNAME=airflow
       - AIRFLOW_PASSWORD=airflow
+      - AIRFLOW_SERVER_HOST=papdpsaplr001l
+      - AIRFLOW_SERVER_USER=airflow
+      - AIRFLOW_SERVER_PASSWORD=airflow
+      # Note: If SSH requires AD credentials, set AIRFLOW_SERVER_PASSWORD to your AD password
+      # Or set AIRFLOW_SERVER_USER in format: DOMAIN\\username or username@domain.com
+      - AIRFLOW_METADATA_PATH=/opt/airflow/data/metadata
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
       - POLL_INTERVAL=30
       - MAX_TIMEOUT=3600
+    extra_hosts:
+      - "papdpsaplr001l:10.35.75.11"
+      - "papdpsaplr001l.intra.infousa.com:10.35.75.11"
     networks:
       - event-driven-net
     restart: unless-stopped
