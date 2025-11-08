@@ -1,18 +1,38 @@
 {
   "name": "event_driven_sequential_workflow",
-  "description": "Event-driven sequential pipeline using MinIO file processing with EVENT tasks",
-  "version": 2,
+  "description": "Event-driven sequential pipeline: Airflow → Email Validation → Phone Validation → Enricher",
+  "version": 5,
   "tasks": [
     {
-      "name": "start_pipeline",
-      "taskReferenceName": "start_pipeline",
+      "name": "trigger_airflow_dag",
+      "taskReferenceName": "trigger_airflow_dag",
       "type": "KAFKA_PUBLISH",
       "inputParameters": {
         "kafka_request": {
           "topic": "conductor-events",
           "bootStrapServers": "kafka:9092",
-          "value": "{\"workflowId\": \"${workflow.workflowId}\", \"eventType\": \"pipeline_started\", \"data\": {\"input_bucket\": \"raw-data\", \"input_key\": \"customer_data_sample.csv\", \"output_bucket\": \"email-validated\", \"output_key\": \"email_validated_${workflow.instanceId}.csv\", \"pipelineStage\": \"start\", \"records\": 1000}}",
-          "key": "pipeline-start-${workflow.instanceId}"
+          "value": "{\"workflowId\": \"${workflow.workflowId}\", \"eventType\": \"airflow_trigger_requested\", \"data\": {\"dag_id\": \"nua-nameparse-process-stage-v02-00-06-tiny\", \"execution_id\": \"WBNameParse\", \"pipelineStage\": \"airflow_processing\"}}",
+          "key": "airflow-trigger-${workflow.instanceId}"
+        }
+      }
+    },
+    {
+      "name": "wait_for_airflow_completion",
+      "taskReferenceName": "wait_for_airflow_completion",
+      "type": "EVENT",
+      "sink": "conductor:airflow_dag_completed",
+      "asyncComplete": true
+    },
+    {
+      "name": "trigger_email_validation",
+      "taskReferenceName": "trigger_email_validation",
+      "type": "KAFKA_PUBLISH",
+      "inputParameters": {
+        "kafka_request": {
+          "topic": "conductor-events",
+          "bootStrapServers": "kafka:9092",
+          "value": "{\"workflowId\": \"${workflow.workflowId}\", \"eventType\": \"pipeline_started\", \"data\": {\"input_bucket\": \"raw-data\", \"input_key\": \"customer_data_sample.csv\", \"output_bucket\": \"email-validated\", \"output_key\": \"email_validated_${workflow.instanceId}.csv\", \"pipelineStage\": \"email_validation\", \"records\": 1000}}",
+          "key": "email-validation-${workflow.instanceId}"
         }
       }
     },
@@ -20,7 +40,8 @@
       "name": "wait_for_email_completion",
       "taskReferenceName": "wait_for_email_completion",
       "type": "EVENT",
-      "sink": "conductor:email_validation_completed"
+      "sink": "conductor:email_validation_completed",
+      "asyncComplete": true
     },
     {
       "name": "trigger_phone_validation",
@@ -39,7 +60,8 @@
       "name": "wait_for_phone_completion",
       "taskReferenceName": "wait_for_phone_completion",
       "type": "EVENT",
-      "sink": "conductor:phone_validation_completed"
+      "sink": "conductor:phone_validation_completed",
+      "asyncComplete": true
     },
     {
       "name": "trigger_enrichment",
@@ -58,7 +80,8 @@
       "name": "wait_for_enrichment_completion",
       "taskReferenceName": "wait_for_enrichment_completion",
       "type": "EVENT",
-      "sink": "conductor:enrichment_completed"
+      "sink": "conductor:enrichment_completed",
+      "asyncComplete": true
     },
     {
       "name": "finalize_pipeline",
@@ -78,6 +101,7 @@
   "outputParameters": {
     "pipeline_result": "${finalize_pipeline.output}",
     "workflow_id": "${workflow.workflowId}",
+    "airflow_result": "${wait_for_airflow_completion.output}",
     "email_result": "${wait_for_email_completion.output}",
     "phone_result": "${wait_for_phone_completion.output}",
     "enrichment_result": "${wait_for_enrichment_completion.output}",
@@ -87,5 +111,5 @@
   "restartable": true,
   "workflowStatusListenerEnabled": false,
   "timeoutPolicy": "ALERT_ONLY",
-  "timeoutSeconds": 600
+  "timeoutSeconds": 3600
 }

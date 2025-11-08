@@ -6,18 +6,24 @@ METADATA_URL="${METADATA_URL:-s3://958825666686-dpservices-testing-data/conducto
 EXECUTION_ID="${EXECUTION_ID:-WBNameParse}"
 DAG_ID="${DAG_ID:-nua-nameparse-process-stage-v02-00-06-tiny}"
 MWAA_ENDPOINT="${MWAA_ENDPOINT:-https://a53c6d7a-ec07-465a-9824-6cc199145a7a-vpce.c75.us-east-1.airflow.amazonaws.com:443}"
-MWAA_SESSION_TOKEN="${MWAA_SESSION_TOKEN:-2f02e33a-98c7-407d-b446-3daff8eb1d3b.9KxQbGdQ5UZ2eWHmoOXjc7cDi2s}"
+MWAA_SESSION_TOKEN="${MWAA_SESSION_TOKEN:-75a55d8f-15c4-4b53-ade1-27cc5e123d4a.6dpfz5Y13g_uRlYvS_8M4b6GEjI}"
 
-# Optional stats_url (can be provided in event data if needed)
-STATS_URL="${STATS_URL:-}"
-
-# Make jobid unique by appending session ID
-SESSION_ID=$$
+# Make jobid unique by appending session ID (4 digits)
+# Use SESSION_ID from environment if provided (from workflow), otherwise use process ID
+if [ -z "${SESSION_ID}" ]; then
+    SESSION_ID=$(printf "%04d" $$)
+fi
+ORIGINAL_JOBID="${JOBID}"
 JOBID="${JOBID}-${SESSION_ID}"
 
-echo "Triggering Airflow DAG: ${DAG_ID}"
-echo "Job ID: ${JOBID}"
-echo "Metadata URL: ${METADATA_URL}"
+# Optional stats_url (can be provided in event data if needed)
+# Default stats_url format: scp://abinitio@papdpsetld003l.intra.infousa.com//abi/log/UQU_${jobid}.2771.stats.jsonl
+STATS_URL="${STATS_URL:-scp://abinitio@papdpsetld003l.intra.infousa.com//abi/log/UQU_${ORIGINAL_JOBID}.2771.stats.jsonl}"
+
+# Log to stderr (so it doesn't interfere with JSON output)
+echo "Triggering Airflow DAG: ${DAG_ID}" >&2
+echo "Job ID: ${JOBID}" >&2
+echo "Metadata URL: ${METADATA_URL}" >&2
 
 # Build the JSON payload
 CONF_JSON="{\"jobid\":\"${JOBID}\",\"metadata_url\":\"${METADATA_URL}\",\"execution_id\":\"${EXECUTION_ID}\""
@@ -29,15 +35,20 @@ fi
 
 CONF_JSON="${CONF_JSON}}"
 
-# Trigger the DAG run
-curl -X POST "${MWAA_ENDPOINT}/api/v1/dags/${DAG_ID}/dagRuns" \
+# Trigger the DAG run and capture response
+RESPONSE=$(curl -X POST "${MWAA_ENDPOINT}/api/v1/dags/${DAG_ID}/dagRuns" \
      --silent \
      -b "session=${MWAA_SESSION_TOKEN}" \
      -H 'Content-Type: application/json' \
      --data-binary "{
        \"dag_run_id\": \"${JOBID}\",
        \"conf\": ${CONF_JSON}
-     }"
+     }")
+
+EXIT_CODE=$?
+
+# Output only the JSON response to stdout (for parsing by service.py)
+echo "${RESPONSE}"
 
 # Return the curl exit code
-exit $?
+exit $EXIT_CODE
