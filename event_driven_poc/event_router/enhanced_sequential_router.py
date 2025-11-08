@@ -36,6 +36,7 @@ SERVICE_ROUTING = {
     'pipeline_started': 'email-validation-requests',
     'phone_validation_requested': 'phone-validation-requests',
     'enrichment_requested': 'enrichment-requests',
+    'airflow_trigger_requested': 'airflow-trigger-requests',
     'pipeline_completed': 'pipeline-completion'
 }
 
@@ -119,6 +120,8 @@ class EnhancedSequentialEventRouter:
                 self.route_to_phone_validation(event)
             elif event_type == 'enrichment_requested':
                 self.route_to_enrichment(event)
+            elif event_type == 'airflow_trigger_requested':
+                self.route_to_airflow_trigger(event)
             elif event_type == 'pipeline_completed':
                 self.route_to_completion(event)
             else:
@@ -372,6 +375,57 @@ class EnhancedSequentialEventRouter:
             
         except Exception as e:
             logger.error(f"❌ Error routing to enrichment: {e}")
+    
+    def route_to_airflow_trigger(self, event):
+        """Route to Airflow adapter service to trigger DAG run"""
+        try:
+            workflow_id = event.get('workflowId')
+            data = event.get('data', {})
+            
+            # Extract Airflow configuration from event data
+            dag_id = data.get('dag_id', 'nua-nameparse-process-stage-v02-00-06-tiny')
+            execution_id = data.get('execution_id', 'WBNameParse')
+            metadata_url = data.get('metadata_url')
+            jobid = data.get('jobid') or workflow_id or f"job-{int(time.time())}"
+            
+            logger.info(f"🔍 Airflow trigger routing - workflow_id: {workflow_id}")
+            logger.info(f"🔍 Airflow trigger routing - dag_id: {dag_id}")
+            logger.info(f"🔍 Airflow trigger routing - jobid: {jobid}")
+            
+            # Create Airflow trigger request
+            airflow_request = {
+                'workflowId': workflow_id,
+                'taskId': 'airflow_trigger_task',
+                'eventType': 'airflow_trigger_request',
+                'data': {
+                    'dag_id': dag_id,
+                    'execution_id': execution_id,
+                    'metadata_url': metadata_url,
+                    'jobid': jobid,
+                    'pipelineStage': 'airflow_processing',
+                    'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ')
+                }
+            }
+            
+            # Send to airflow trigger requests topic
+            self.kafka_producer.send('airflow-trigger-requests', airflow_request)
+            self.kafka_producer.flush()
+            
+            # Update pipeline state
+            if workflow_id not in self.pipeline_state:
+                self.pipeline_state[workflow_id] = {
+                    'stages_completed': [],
+                    'waiting_for': 'airflow_dag_completed',
+                    'data_flow': {}
+                }
+            else:
+                self.pipeline_state[workflow_id]['waiting_for'] = 'airflow_dag_completed'
+            
+            logger.info(f"✅ Routed to Airflow adapter for workflow: {workflow_id}")
+            logger.info(f"   DAG ID: {dag_id}, Job ID: {jobid}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error routing to Airflow adapter: {e}", exc_info=True)
     
     def route_to_completion(self, event):
         """Route to pipeline completion with MinIO file processing"""

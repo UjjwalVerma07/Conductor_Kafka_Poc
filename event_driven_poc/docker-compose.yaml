@@ -111,7 +111,22 @@ services:
       start_period: 60s
 
   # Note: Conductor UI is available at http://localhost:8080 (built into the server)
-  # Event Router removed - using direct Conductor-microservice integration
+
+  # Event Router - Routes from conductor-events to service request topics
+  # Services publish directly to conductor-events (pure event-driven, no API calls)
+  event-router:
+    build: ./event_router
+    container_name: event-router
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      - KAFKA_BOOTSTRAP=kafka:9092
+      - CONDUCTOR_SERVER_URL=http://conductor-server:8080/api
+    networks:
+      - event-driven-net
+    restart: unless-stopped
+    command: python3 enhanced_sequential_router.py
 
   # Email Validator Service
   email-validator:
@@ -185,6 +200,13 @@ services:
     environment:
       - KAFKA_BOOTSTRAP=kafka:9092
       - SERVICE_NAME=airflow-adapter
+      # MWAA Configuration (Amazon Managed Workflows for Apache Airflow)
+      - MWAA_ENDPOINT=${MWAA_ENDPOINT:-https://a53c6d7a-ec07-465a-9824-6cc199145a7a-vpce.c75.us-east-1.airflow.amazonaws.com:443}
+      - MWAA_SESSION_TOKEN=75a55d8f-15c4-4b53-ade1-27cc5e123d4a.6dpfz5Y13g_uRlYvS_8M4b6GEjI
+      # DAG Monitoring Configuration
+      - DAG_POLL_INTERVAL=${DAG_POLL_INTERVAL:-10}
+      - DAG_MAX_WAIT_TIME=${DAG_MAX_WAIT_TIME:-3600}
+      # Legacy Airflow Configuration (if using non-MWAA Airflow)
       - AIRFLOW_HOST=papdpsaplr001l:8080
       - AIRFLOW_USERNAME=airflow
       - AIRFLOW_PASSWORD=airflow
