@@ -160,6 +160,11 @@ class EmailValidatorService:
             logger.info(f"📁 Output: {output_bucket}/{output_key}")
             logger.info(f"🔍 Raw data received: {data}")
             
+            # Sleep for 10 seconds to simulate processing time
+            logger.info("⏳ Sleeping for 10 seconds to simulate processing time...")
+            time.sleep(10)
+            logger.info("✅ Sleep completed, continuing with processing...")
+            
             # Ensure output bucket exists
             self._ensure_output_bucket_exists(output_bucket)
             
