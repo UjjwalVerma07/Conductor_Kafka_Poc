@@ -188,7 +188,7 @@ services:
       - event-driven-net
     restart: unless-stopped
 
-  # Airflow Adapter Service (Phase 1 + Phase 2: MOVEIN)
+  
   airflow-adapter:
     build: ./microservices/airflow_adapter
     container_name: airflow-adapter-event
