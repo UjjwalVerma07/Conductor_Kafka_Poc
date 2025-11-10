@@ -202,7 +202,7 @@ services:
       - SERVICE_NAME=airflow-adapter
       # MWAA Configuration (Amazon Managed Workflows for Apache Airflow)
       - MWAA_ENDPOINT=${MWAA_ENDPOINT:-https://a53c6d7a-ec07-465a-9824-6cc199145a7a-vpce.c75.us-east-1.airflow.amazonaws.com:443}
-      - MWAA_SESSION_TOKEN=3dd3e8e0-f742-48be-9181-4d806cb1ee07.D5gCSG9J0fSZSf1hnNvrGe9sLQ8
+      - MWAA_SESSION_TOKEN=8e3be2fd-3b2a-449a-bae4-22261a808d1d.aDsPU_P-PwV-Ti55Wn2EARdbzQU
       # DAG Monitoring Configuration
       - DAG_POLL_INTERVAL=${DAG_POLL_INTERVAL:-10}
       - DAG_MAX_WAIT_TIME=${DAG_MAX_WAIT_TIME:-3600}
