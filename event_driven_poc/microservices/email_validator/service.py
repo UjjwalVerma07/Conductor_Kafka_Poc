@@ -196,11 +196,21 @@ class EmailValidatorService:
                    }
             
             # Publish directly to Conductor (NO Event Router is used here )
-            self.kafka_producer.send('conductor-events', result_event)
-
-
-            """Publish to this Kafka topic also for now then we will update it later"""
-            #self.kafka_producer.send('email-validation-results', result_event)
+            # Use workflowId as key to help Conductor route the event
+            try:
+                future = self.kafka_producer.send(
+                    'conductor-events',
+                    key=workflow_id.encode('utf-8') if workflow_id else None,
+                    value=result_event
+                )
+                
+                # Wait for send to complete and log result
+                record_metadata = future.get(timeout=10)
+                logger.info(f"✅ Published completion event to conductor-events for workflow {workflow_id}")
+                logger.info(f"   Topic: {record_metadata.topic}, Partition: {record_metadata.partition}, Offset: {record_metadata.offset}")
+            except Exception as e:
+                logger.error(f"❌ Error publishing event to conductor-events: {e}", exc_info=True)
+            
             self.kafka_producer.flush()
             
             logger.info(f"✅ Email validation completed: {valid_count} valid, {invalid_count} invalid")
@@ -223,7 +233,17 @@ class EmailValidatorService:
             
             # Publish failure directly to Conductor
             #Here also we are dirctly publishing to the Conductor events topoic 
-            self.kafka_producer.send('conductor-events', failure_event)
+            try:
+                workflow_id = event.get('workflowId', 'unknown')
+                future = self.kafka_producer.send(
+                    'conductor-events',
+                    key=workflow_id.encode('utf-8') if workflow_id != 'unknown' else None,
+                    value=failure_event
+                )
+                record_metadata = future.get(timeout=10)
+                logger.info(f"✅ Published failure event to conductor-events for workflow {workflow_id}")
+            except Exception as e:
+                logger.error(f"❌ Error publishing failure event to conductor-events: {e}", exc_info=True)
             self.kafka_producer.flush()
     
     def consume_task_events(self):

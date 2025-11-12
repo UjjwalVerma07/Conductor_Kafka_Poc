@@ -6,7 +6,7 @@ METADATA_URL="${METADATA_URL:-s3://958825666686-dpservices-testing-data/conducto
 EXECUTION_ID="${EXECUTION_ID:-WBNameParse}"
 DAG_ID="${DAG_ID:-nua-nameparse-process-stage-v02-00-06-tiny}"
 MWAA_ENDPOINT="${MWAA_ENDPOINT:-https://a53c6d7a-ec07-465a-9824-6cc199145a7a-vpce.c75.us-east-1.airflow.amazonaws.com:443}"
-MWAA_SESSION_TOKEN="${MWAA_SESSION_TOKEN:-8e3be2fd-3b2a-449a-bae4-22261a808d1d.aDsPU_P-PwV-Ti55Wn2EARdbzQU}"
+MWAA_SESSION_TOKEN="${MWAA_SESSION_TOKEN:-40ffda67-6c02-4988-8256-d4a9fdae0fb7.Cc_OGKLNGfOYsq5liqmiNRcdHyw}"
 
 # Make jobid unique by appending session ID (4 digits)
 # Use SESSION_ID from environment if provided (from workflow), otherwise use process ID
@@ -52,3 +52,5 @@ echo "${RESPONSE}"
 
 # Return the curl exit code
 exit $EXIT_CODE
+
+#All the values are currenlty hardcoded in the script like metadata_url,stats_url and job_id and execution_id.

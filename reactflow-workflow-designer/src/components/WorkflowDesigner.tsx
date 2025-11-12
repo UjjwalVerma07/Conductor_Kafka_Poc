@@ -1,0 +1,423 @@
+import React, { useCallback, useState } from 'react';
+// WorkflowDesigner: minimal canvas + palette to compose service nodes.
+// Only the first Email node accepts a file/key input; all other details are derived.
+import ReactFlow, {
+  addEdge,
+  Background,
+  Connection,
+  Controls,
+  Edge,
+  Node,
+  useEdgesState,
+  useNodesState,
+  Panel,
+  MiniMap,
+} from 'reactflow';
+import 'reactflow/dist/style.css';
+import {
+  AppBar,
+  Toolbar,
+  Typography,
+  Button,
+  Box,
+  Drawer,
+  Stack,
+  Chip,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Alert,
+  Tooltip,
+} from '@mui/material';
+import { Download, Menu as MenuIcon, Code, Brightness4, Brightness7 } from '@mui/icons-material';
+import KafkaPublishNode from './nodes/KafkaPublishNode';
+import WaitForResultNode from './nodes/WaitForResultNode';
+import EventWaitNode from './nodes/EventWaitNode';
+import NodePalette from './NodePalette';
+import { convertToConductorJSON } from '../utils/conductorConverter';
+import { deployConductorWorkflow } from '../api/conductorApi';
+import ReactJson from 'react-json-view';
+
+// Map service types to ReactFlow node components
+const nodeTypes = {
+  airflowTrigger: KafkaPublishNode,
+  emailValidation: KafkaPublishNode,
+  phoneValidation: KafkaPublishNode,
+  enrichment: KafkaPublishNode,
+  finalizePipeline: KafkaPublishNode,
+  eventWait: EventWaitNode,
+  waitForResult: WaitForResultNode,
+};
+
+const initialNodes: Node[] = [];
+const initialEdges: Edge[] = [];
+
+type Props = { themeMode?: 'light' | 'dark'; onToggleTheme?: () => void };
+
+function WorkflowDesigner({ themeMode = 'light', onToggleTheme }: Props) {
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [drawerOpen, setDrawerOpen] = useState(true);
+  const [jsonDialogOpen, setJsonDialogOpen] = useState(false);
+  const [workflowName, setWorkflowName] = useState('poc_workflow');
+  const [workflowDescription, setWorkflowDescription] = useState('Event-driven pipeline with direct Conductor-microservice integration');
+  const [ownerEmail, setOwnerEmail] = useState('team@data-axle.com');
+  const [conductorUrl, setConductorUrl] = useState('http://localhost:8080');
+  const [generatedJson, setGeneratedJson] = useState<any>(null);
+  const [postStatus, setPostStatus] = useState<{
+    type: 'success' | 'error' | 'info' | null;
+    message: string;
+  }>({ type: null, message: '' });
+
+  const onConnect = useCallback(
+    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
+    [setEdges]
+  );
+
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+
+      const type = event.dataTransfer.getData('application/reactflow');
+      if (!type) return;
+
+      const position = {
+        x: event.clientX - 250,
+        y: event.clientY - 100,
+      };
+
+      const newNode: Node = {
+        id: `${type}-${Date.now()}`,
+        type,
+        position,
+        data: getDefaultNodeData(type),
+      };
+
+      // Auto-append a derived event wait node for service publishes
+      const serviceTypes = new Set(['airflowTrigger', 'emailValidation', 'phoneValidation', 'enrichment']);
+      if (serviceTypes.has(type)) {
+        const waitId = `eventWait-${Date.now() + 1}`;
+        const waitNode: Node = {
+          id: waitId,
+          type: 'eventWait',
+          position: { x: position.x + 220, y: position.y },
+          data: getDefaultNodeData('eventWait'),
+        };
+        const newEdge: Edge = {
+          id: `e-${newNode.id}-${waitId}`,
+          source: newNode.id,
+          target: waitId,
+          animated: true,
+        };
+        setNodes((nds) => nds.concat(newNode, waitNode));
+        setEdges((eds) => eds.concat(newEdge));
+      } else {
+        setNodes((nds) => nds.concat(newNode));
+      }
+    },
+    [setNodes, setEdges]
+  );
+
+  // Default data when dragging new nodes from the palette.
+  // To add a new service, add a new case with { label, serviceName }.
+  const getDefaultNodeData = (type: string) => {
+    switch (type) {
+      case 'airflowTrigger':
+        return {
+          label: 'Airflow Trigger',
+          serviceName: 'airflow_processing',
+          dagId: 'nua-nameparse-process-stage-v02-00-06-tiny',
+          executionId: 'WBNameParse',
+        };
+      case 'emailValidation':
+        return {
+          label: 'Email Validation',
+          serviceName: 'email_validation',
+          simpleInputMode: true,
+          inputKey: 'customer_data_sample.csv',
+          inputBucket: 'raw-data',
+        };
+      case 'phoneValidation':
+        return {
+          label: 'Phone Validation',
+          serviceName: 'phone_validation',
+        };
+      case 'enrichment':
+        return {
+          label: 'Enrichment',
+          serviceName: 'enrichment',
+        };
+      case 'finalizePipeline':
+        return {
+          label: 'Finalize Pipeline',
+          serviceName: 'finalize_pipeline',
+        };
+      case 'eventWait':
+        return {
+          label: 'Wait Event',
+        };
+      case 'waitForResult':
+        return {
+          label: 'Wait for Result',
+          topic: 'stage1-results',
+          timeout: 120,
+        };
+      default:
+        return { label: 'Node' };
+    }
+  };
+
+  const handleExportJSON = () => {
+    const json = convertToConductorJSON(nodes, edges, workflowName);
+    // Apply additional metadata
+    json.description = workflowDescription;
+    json.ownerEmail = ownerEmail;
+    setGeneratedJson(json);
+    setJsonDialogOpen(true);
+  };
+
+  const handleDownloadJSON = () => {
+    const json = convertToConductorJSON(nodes, edges, workflowName);
+    // Apply additional metadata
+    json.description = workflowDescription;
+    json.ownerEmail = ownerEmail;
+    const blob = new Blob([JSON.stringify(json, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${workflowName}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePostWorkflow = async () => {
+    try {
+      setPostStatus({ type: 'info', message: 'Posting workflow...' });
+      const json = convertToConductorJSON(nodes, edges, workflowName);
+      // Apply additional metadata
+      json.description = workflowDescription;
+      json.ownerEmail = ownerEmail;
+      await deployConductorWorkflow(conductorUrl, json);
+      setPostStatus({
+        type: 'success',
+        message: 'Workflow posted successfully',
+      });
+    } catch (error: any) {
+      setPostStatus({
+        type: 'error',
+        message: error.message || 'POST failed',
+      });
+    }
+  };
+
+  const clearCanvas = () => {
+    setNodes([]);
+    setEdges([]);
+  };
+
+  // Removed sample template loader to keep repo minimal and focused.
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      {/* App Bar */}
+      <AppBar position="static">
+        <Toolbar>
+          <IconButton
+            edge="start"
+            color="inherit"
+            onClick={() => setDrawerOpen(!drawerOpen)}
+          >
+            <MenuIcon />
+          </IconButton>
+          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+            Conductor Workflow Designer - {nodes.length} nodes, {edges.length}{' '}
+            connections
+          </Typography>
+          <Stack direction="row" spacing={1}>
+            <Tooltip title={themeMode === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}>
+              <IconButton color="inherit" onClick={onToggleTheme}>
+                {themeMode === 'light' ? <Brightness4 /> : <Brightness7 />}
+              </IconButton>
+            </Tooltip>
+            <Button
+              color="inherit"
+              startIcon={<Code />}
+              onClick={handleExportJSON}
+            >
+              View JSON
+            </Button>
+            <Button
+              color="inherit"
+              startIcon={<Download />}
+              onClick={handleDownloadJSON}
+            >
+              Download
+            </Button>
+          </Stack>
+        </Toolbar>
+      </AppBar>
+
+      {/* Main Content */}
+      <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        {/* Side Panel */}
+        <Drawer
+          variant="persistent"
+          open={drawerOpen}
+          sx={{
+            width: 300,
+            flexShrink: 0,
+            '& .MuiDrawer-paper': {
+              width: 300,
+              boxSizing: 'border-box',
+              position: 'relative',
+            },
+          }}
+        >
+          <Box sx={{ p: 2, overflow: 'auto' }}>
+            <Typography variant="h6" gutterBottom>
+              Node Palette
+            </Typography>
+            <NodePalette />
+
+            <Typography variant="h6" sx={{ mt: 3 }} gutterBottom>
+              Workflow Settings
+            </Typography>
+            <Stack spacing={1}>
+              <TextField
+                fullWidth
+                label="Workflow Name"
+                value={workflowName}
+                onChange={(e) => setWorkflowName(e.target.value)}
+                size="small"
+              />
+              <TextField
+                fullWidth
+                label="Description"
+                value={workflowDescription}
+                onChange={(e) => setWorkflowDescription(e.target.value)}
+                size="small"
+                multiline
+                rows={2}
+              />
+              <TextField
+                fullWidth
+                label="Owner Email"
+                value={ownerEmail}
+                onChange={(e) => setOwnerEmail(e.target.value)}
+                size="small"
+                type="email"
+              />
+              <TextField
+                fullWidth
+                label="Conductor URL"
+                value={conductorUrl}
+                onChange={(e) => setConductorUrl(e.target.value)}
+                size="small"
+                placeholder="http://localhost:8080"
+              />
+              <Button
+                variant="contained"
+                fullWidth
+                onClick={handlePostWorkflow}
+                disabled={nodes.length === 0 || !conductorUrl}
+              >
+                POST to Conductor
+              </Button>
+              {postStatus.type && (
+                <Alert severity={postStatus.type}>
+                  {postStatus.message}
+                </Alert>
+              )}
+              <Button
+                variant="outlined"
+                fullWidth
+                color="error"
+                onClick={clearCanvas}
+              >
+                Clear Canvas
+              </Button>
+            </Stack>
+
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="caption" color="text.secondary">
+                Drag nodes onto the canvas and connect them to build your
+                workflow
+              </Typography>
+            </Box>
+          </Box>
+        </Drawer>
+
+        {/* ReactFlow Canvas */}
+        <Box sx={{ flex: 1, position: 'relative' }}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onDrop={onDrop}
+            onDragOver={onDragOver}
+            nodeTypes={nodeTypes}
+            fitView
+          >
+            <Background />
+            <Controls />
+            <MiniMap />
+            <Panel position="top-right">
+              <Stack direction="row" spacing={1}>
+                <Chip label={`Email: ${nodes.filter((n) => n.type === 'emailValidation').length}`} color="primary" size="small" />
+                <Chip label={`Phone: ${nodes.filter((n) => n.type === 'phoneValidation').length}`} color="primary" size="small" />
+                <Chip label={`Enrich: ${nodes.filter((n) => n.type === 'enrichment').length}`} color="primary" size="small" />
+                <Chip label={`Finalize: ${nodes.filter((n) => n.type === 'finalizePipeline').length}`} color="primary" size="small" />
+                <Chip label={`Wait: ${nodes.filter((n) => n.type === 'waitForResult').length}`} color="secondary" size="small" />
+              </Stack>
+            </Panel>
+          </ReactFlow>
+        </Box>
+      </Box>
+
+      {/* JSON View Dialog */}
+      <Dialog
+        open={jsonDialogOpen}
+        onClose={() => setJsonDialogOpen(false)}
+        maxWidth="lg"
+        fullWidth
+      >
+        <DialogTitle>Generated Conductor JSON</DialogTitle>
+        <DialogContent>
+          {generatedJson && (
+            <ReactJson
+              src={generatedJson}
+              theme="monokai"
+              collapsed={2}
+              displayDataTypes={false}
+              displayObjectSize={false}
+              enableClipboard
+            />
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setJsonDialogOpen(false)}>Close</Button>
+          <Button onClick={handleDownloadJSON} variant="contained">
+            Download JSON
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Minimal POC: No deploy dialog */}
+    </Box>
+  );
+}
+
+export default WorkflowDesigner;
+

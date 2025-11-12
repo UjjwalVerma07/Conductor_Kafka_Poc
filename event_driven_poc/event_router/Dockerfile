@@ -7,4 +7,4 @@ RUN pip install -r requirements.txt
 
 COPY . .
 
-CMD ["python", "service.py"]
+CMD ["python", "conductor_event_router.py"]

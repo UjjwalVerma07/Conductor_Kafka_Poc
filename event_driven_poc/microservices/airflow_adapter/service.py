@@ -309,7 +309,7 @@ class AirflowAdapterService:
             if workflow_id:
                 # Use hash of workflow_id to get consistent 4-digit session ID
                 session_hash = abs(hash(workflow_id)) % 10000
-                session_id = f"{session_hash:04d}"
+                session_id = f"{session_hash:04d}" #format the number as 4 digit string with leading zeros.
             else:
                 # Fallback to process ID if no workflow_id
                 import os
@@ -336,6 +336,7 @@ class AirflowAdapterService:
                 dag_id=dag_id
             )
             
+            #This is to check wether the script has successfully triggerd the DAG run or not 
             if not trigger_success or not dag_run_id:
                 # Failed to trigger DAG
                 logger.error(f"❌ Failed to trigger DAG run via script")
