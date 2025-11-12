@@ -38,7 +38,7 @@ import WaitForResultNode from './nodes/WaitForResultNode';
 import EventWaitNode from './nodes/EventWaitNode';
 import NodePalette from './NodePalette';
 import { convertToConductorJSON } from '../utils/conductorConverter';
-import { deployConductorWorkflow } from '../api/conductorApi';
+import { deployConductorWorkflow, isWorkflowRegistered, triggerConductorWorkflow } from '../api/conductorApi';
 import ReactJson from 'react-json-view';
 
 // Map service types to ReactFlow node components
@@ -202,20 +202,40 @@ function WorkflowDesigner({ themeMode = 'light', onToggleTheme }: Props) {
 
   const handlePostWorkflow = async () => {
     try {
-      setPostStatus({ type: 'info', message: 'Posting workflow...' });
       const json = convertToConductorJSON(nodes, edges, workflowName);
       // Apply additional metadata
       json.description = workflowDescription;
       json.ownerEmail = ownerEmail;
+      
+      // Debug: Log the JSON being sent to Conductor
+      console.log('JSON being sent to Conductor:', JSON.stringify(json, null, 2));
+      console.log('Tasks in JSON (order):', json.tasks.map((t: any, idx: number) => ({ 
+        index: idx, 
+        name: t.name, 
+        type: t.type 
+      })));
+
+      // Step 1: Always register/update the workflow with new version
+      // The timestamp-based version ensures a new version is created each time
+      setPostStatus({ type: 'info', message: 'Registering workflow with new version...' });
       await deployConductorWorkflow(conductorUrl, json);
+      setPostStatus({ type: 'info', message: `Workflow registered (version ${json.version}). Triggering...` });
+
+      // Step 3: Trigger the workflow with the specific version we just registered
+      const workflowId = await triggerConductorWorkflow(conductorUrl, workflowName, {}, json.version);
+      
+      const workflowUrl = `${conductorUrl.replace('/api', '')}/workflow/${workflowId}`;
       setPostStatus({
         type: 'success',
-        message: 'Workflow posted successfully',
+        message: `Workflow triggered successfully! ID: ${workflowId}`,
       });
+      
+      // Log the workflow URL for easy access
+      console.log(`Workflow URL: ${workflowUrl}`);
     } catch (error: any) {
       setPostStatus({
         type: 'error',
-        message: error.message || 'POST failed',
+        message: error.message || 'Operation failed',
       });
     }
   };

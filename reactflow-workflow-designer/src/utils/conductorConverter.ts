@@ -43,8 +43,19 @@ export function convertToConductorJSON(
     inDegree.set(edge.target, (inDegree.get(edge.target) || 0) + 1);
   });
 
+  // Debug: Log edges and in-degrees
+  console.log('Edges:', edges.map(e => ({ from: e.source, to: e.target })));
+  console.log('In-degrees:', Array.from(inDegree.entries()).map(([id, deg]) => ({ id, degree: deg })));
+
   // Topological sort to determine task order
   const sortedNodes = topologicalSort(nodes, adjacencyMap, inDegree);
+  
+  // Debug: Log the sorted order
+  console.log('Topologically sorted nodes:', sortedNodes.map(n => ({ 
+    id: n.id, 
+    type: n.type, 
+    label: n.data?.label || n.data?.serviceName || n.id 
+  })));
 
   // Convert nodes to Conductor tasks
   const tasks: ConductorTask[] = [];
@@ -80,11 +91,17 @@ export function convertToConductorJSON(
     }
   }
 
+  // Debug: Log final task order
+  console.log('Final task order in workflow:', sortedNodes
+    .filter(n => ['phoneValidation', 'enrichment', 'emailValidation', 'airflowTrigger', 'finalizePipeline'].includes(n.type as string))
+    .map(n => ({ id: n.id, type: n.type, name: n.data?.label || n.data?.serviceName || n.id })));
+
   sortedNodes.forEach((node, index) => {
     const isFirstService = node.id === firstServiceNodeId;
     const task = convertNodeToTaskGeneric(node, index, incomingById, computedOutputs, idToNode, isFirstService);
     if (task) {
       tasks.push(task);
+      console.log(`Added task ${index + 1}: ${task.name} (from node ${node.id}, type: ${node.type})`);
 
       // Collect outputs from wait_for_result tasks
       if (node.type === 'waitForResult') {
@@ -122,11 +139,20 @@ export function convertToConductorJSON(
     }
   });
 
+  // Debug: Log final tasks array order
+  console.log('Final tasks array order:', tasks.map((t, idx) => ({ 
+    index: idx, 
+    name: t.name, 
+    type: t.type,
+    taskReferenceName: t.taskReferenceName 
+  })));
+
   // Build workflow with complete metadata
+  // Use timestamp-based version to ensure new workflow is always registered
   const workflow: ConductorWorkflow = {
     name: workflowName,
     description: `Generated workflow with ${tasks.length} tasks`,
-    version: 2,
+    version: Math.floor(Date.now() / 1000), // Use timestamp to force new version
     tasks,
     inputParameters: [],
     outputParameters: {
@@ -146,6 +172,9 @@ export function convertToConductorJSON(
     timeoutSeconds: 3600 as any,
     ownerEmail: 'team@company.com',
   };
+
+  // Debug: Log the complete workflow JSON structure
+  console.log('Complete workflow JSON:', JSON.stringify(workflow, null, 2));
 
   return workflow;
 }
@@ -168,6 +197,7 @@ function topologicalSort(
   });
 
   // Sort nodes by position (left to right, top to bottom) as tiebreaker
+  // This ensures visual order is preserved when multiple nodes have no dependencies
   queue.sort((a, b) => {
     if (Math.abs(a.position.y - b.position.y) < 50) {
       return a.position.x - b.position.x;
@@ -175,9 +205,18 @@ function topologicalSort(
     return a.position.y - b.position.y;
   });
 
+  console.log('Initial queue (nodes with no dependencies):', queue.map(n => ({ 
+    id: n.id, 
+    type: n.type, 
+    x: n.position.x, 
+    y: n.position.y 
+  })));
+
   while (queue.length > 0) {
     const node = queue.shift()!;
     sorted.push(node);
+
+    console.log(`Processing node: ${node.id} (${node.type})`);
 
     // Reduce in-degree for neighbors
     const neighbors = adjacencyMap.get(node.id) || [];
@@ -187,7 +226,17 @@ function topologicalSort(
 
       if (newDegree === 0) {
         const neighbor = nodeMap.get(neighborId);
-        if (neighbor) queue.push(neighbor);
+        if (neighbor) {
+          queue.push(neighbor);
+          // Re-sort queue by position to maintain visual order when multiple nodes become available
+          queue.sort((a, b) => {
+            if (Math.abs(a.position.y - b.position.y) < 50) {
+              return a.position.x - b.position.x;
+            }
+            return a.position.y - b.position.y;
+          });
+          console.log(`Added ${neighbor.id} to queue. Queue now:`, queue.map(n => n.id));
+        }
       }
     });
   }
@@ -195,6 +244,8 @@ function topologicalSort(
   // If not all nodes are sorted, there's a cycle (shouldn't happen in DAG)
   if (sorted.length !== nodes.length) {
     console.warn('Cycle detected in workflow graph, some nodes may be missing');
+    console.warn('Expected', nodes.length, 'nodes, got', sorted.length);
+    console.warn('Missing nodes:', nodes.filter(n => !sorted.includes(n)).map(n => n.id));
   }
 
   return sorted;
