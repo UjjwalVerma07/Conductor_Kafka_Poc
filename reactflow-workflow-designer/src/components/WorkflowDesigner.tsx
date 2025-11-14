@@ -1,4 +1,5 @@
 import React, { useCallback, useState } from 'react';
+import { postWorkflowToFastAPI } from '../api/conductorApi';
 // WorkflowDesigner: minimal canvas + palette to compose service nodes.
 // Only the first Email node accepts a file/key input; all other details are derived.
 import ReactFlow, {
@@ -136,6 +137,7 @@ function WorkflowDesigner({ themeMode = 'light', onToggleTheme }: Props) {
           serviceName: 'airflow_processing',
           dagId: 'nua-nameparse-process-stage-v02-00-06-tiny',
           executionId: 'WBNameParse',
+        
         };
       case 'emailValidation':
         return {
@@ -200,50 +202,104 @@ function WorkflowDesigner({ themeMode = 'light', onToggleTheme }: Props) {
     URL.revokeObjectURL(url);
   };
 
+  // const handlePostWorkflow = async () => {
+  //   try {
+  //     const json = convertToConductorJSON(nodes, edges, workflowName);
+  //     // Apply additional metadata
+  //     json.description = workflowDescription;
+  //     json.ownerEmail = ownerEmail;
+      
+  //     // Debug: Log the JSON being sent to Conductor
+  //     console.log('JSON being sent to Conductor:', JSON.stringify(json, null, 2));
+  //     console.log('Tasks in JSON (order):', json.tasks.map((t: any, idx: number) => ({ 
+  //       index: idx, 
+  //       name: t.name, 
+  //       type: t.type 
+  //     })));
+
+  //     // Step 1: Always register/update the workflow with new version
+  //     // The timestamp-based version ensures a new version is created each time
+  //     setPostStatus({ type: 'info', message: 'Registering workflow with new version...' });
+  //     await deployConductorWorkflow(conductorUrl, json);
+  //     setPostStatus({ type: 'info', message: `Workflow registered (version ${json.version}). Triggering...` });
+
+  //     // Step 3: Trigger the workflow with the specific version we just registered
+  //     const workflowId = await triggerConductorWorkflow(conductorUrl, workflowName, {}, json.version);
+      
+  //     const workflowUrl = `${conductorUrl.replace('/api', '')}/workflow/${workflowId}`;
+  //     setPostStatus({
+  //       type: 'success',
+  //       message: `Workflow triggered successfully! ID: ${workflowId}`,
+  //     });
+      
+  //     // Log the workflow URL for easy access
+  //     console.log(`Workflow URL: ${workflowUrl}`);
+  //   } catch (error: any) {
+  //     setPostStatus({
+  //       type: 'error',
+  //       message: error.message || 'Operation failed',
+  //     });
+  //   }
+  // };
+
+
   const handlePostWorkflow = async () => {
-    try {
-      const json = convertToConductorJSON(nodes, edges, workflowName);
-      // Apply additional metadata
-      json.description = workflowDescription;
-      json.ownerEmail = ownerEmail;
-      
-      // Debug: Log the JSON being sent to Conductor
-      console.log('JSON being sent to Conductor:', JSON.stringify(json, null, 2));
-      console.log('Tasks in JSON (order):', json.tasks.map((t: any, idx: number) => ({ 
-        index: idx, 
-        name: t.name, 
-        type: t.type 
-      })));
-
-      // Step 1: Always register/update the workflow with new version
-      // The timestamp-based version ensures a new version is created each time
-      setPostStatus({ type: 'info', message: 'Registering workflow with new version...' });
-      await deployConductorWorkflow(conductorUrl, json);
-      setPostStatus({ type: 'info', message: `Workflow registered (version ${json.version}). Triggering...` });
-
-      // Step 3: Trigger the workflow with the specific version we just registered
-      const workflowId = await triggerConductorWorkflow(conductorUrl, workflowName, {}, json.version);
-      
-      const workflowUrl = `${conductorUrl.replace('/api', '')}/workflow/${workflowId}`;
-      setPostStatus({
-        type: 'success',
-        message: `Workflow triggered successfully! ID: ${workflowId}`,
-      });
-      
-      // Log the workflow URL for easy access
-      console.log(`Workflow URL: ${workflowUrl}`);
-    } catch (error: any) {
-      setPostStatus({
-        type: 'error',
-        message: error.message || 'Operation failed',
-      });
+  try {
+    if (nodes.length === 0) {
+      setPostStatus({ type: 'error', message: 'No nodes in workflow to submit.' });
+      return;
     }
-  };
 
-  const clearCanvas = () => {
-    setNodes([]);
-    setEdges([]);
-  };
+    // Convert canvas nodes/edges to Conductor JSON
+    const workflowJson = convertToConductorJSON(nodes, edges, workflowName);
+    workflowJson.description = workflowDescription;
+    workflowJson.ownerEmail = ownerEmail;
+
+    // For demo purposes, pick minio_input_uri from the first Email node
+    const emailNode = nodes.find(n => n.type === 'emailValidation');
+    const minio_input_uri = emailNode?.data?.inputKey
+      ? `minio://${emailNode.data.inputBucket}/${emailNode.data.inputKey}`
+      : undefined;
+
+    if (!minio_input_uri) {
+      setPostStatus({ type: 'error', message: 'Cannot find MinIO input URI from Email node.' });
+      return;
+    }
+
+    setPostStatus({ type: 'info', message: 'Submitting workflow to FastAPI...' });
+
+    // Call FastAPI
+    const result = await postWorkflowToFastAPI('http://localhost:8000', {
+      workflow: workflowJson,
+      minio_input_uri,
+      workflow_id: workflowName,
+      trigger_conductor: true,
+    });
+
+    setPostStatus({
+      type: 'success',
+      message: `Workflow deployed successfully! Run ID: ${result.runId}`,
+    });
+
+    console.log('Workflow submission result:', result);
+
+  } catch (error: any) {
+    console.error('Error posting workflow:', error);
+    setPostStatus({
+      type: 'error',
+      message: error.message || 'Failed to submit workflow',
+    });
+  }
+};
+
+
+
+
+
+const clearCanvas = () => {
+  setNodes([]);
+  setEdges([]);
+};
 
   // Removed sample template loader to keep repo minimal and focused.
 
@@ -351,7 +407,7 @@ function WorkflowDesigner({ themeMode = 'light', onToggleTheme }: Props) {
                 onClick={handlePostWorkflow}
                 disabled={nodes.length === 0 || !conductorUrl}
               >
-                POST to Conductor
+                Submit Workflow
               </Button>
               {postStatus.type && (
                 <Alert severity={postStatus.type}>

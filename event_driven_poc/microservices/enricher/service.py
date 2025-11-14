@@ -191,8 +191,8 @@ class EnricherService:
                     "output_bucket": output_bucket,
                     "output_key": output_key,
                     "result": "success",
-                           "processedRecords": int(enriched_count),
-                           "failedRecords": int(failed_count),
+                    "processedRecords": int(enriched_count),
+                    "failedRecords": int(failed_count),
                     "pipelineStage": "enrichment",
                     "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ')
                 }

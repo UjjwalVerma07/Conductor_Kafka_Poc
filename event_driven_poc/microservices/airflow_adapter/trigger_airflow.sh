@@ -6,7 +6,7 @@ METADATA_URL="${METADATA_URL:-s3://958825666686-dpservices-testing-data/conducto
 EXECUTION_ID="${EXECUTION_ID:-WBNameParse}"
 DAG_ID="${DAG_ID:-nua-nameparse-process-stage-v02-00-06-tiny}"
 MWAA_ENDPOINT="${MWAA_ENDPOINT:-https://a53c6d7a-ec07-465a-9824-6cc199145a7a-vpce.c75.us-east-1.airflow.amazonaws.com:443}"
-MWAA_SESSION_TOKEN="${MWAA_SESSION_TOKEN:-40ffda67-6c02-4988-8256-d4a9fdae0fb7.Cc_OGKLNGfOYsq5liqmiNRcdHyw}"
+MWAA_SESSION_TOKEN="${MWAA_SESSION_TOKEN:-013b2ac3-11e2-49fb-811a-91ef9b3297c4.MzL7GyJFtIuBGSaZsP0f5GZ2-3M}"
 
 # Make jobid unique by appending session ID (4 digits)
 # Use SESSION_ID from environment if provided (from workflow), otherwise use process ID

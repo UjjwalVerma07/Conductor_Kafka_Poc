@@ -189,8 +189,8 @@ class PhoneValidatorService:
                     "output_bucket": output_bucket,
                     "output_key": output_key,
                     "result": "success",
-                           "processedRecords": int(valid_count),
-                           "failedRecords": int(invalid_count),
+                    "processedRecords": int(valid_count),
+                    "failedRecords": int(invalid_count),
                     "pipelineStage": "phone_validation",
                     "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ')
                 }

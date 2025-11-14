@@ -107,3 +107,60 @@ export async function triggerConductorWorkflow(
   throw new Error('Unexpected response from Conductor');
 }
 
+export async function postWorkflowToFastAPI(
+  conductorUrl: string,
+  payload: {
+    workflow: any;
+    minio_input_uri: string;
+    workflow_id?: string;
+    trigger_conductor?: boolean;
+  }
+) {
+  const { workflow, minio_input_uri, workflow_id, trigger_conductor = true } = payload;
+
+  console.log("Preparing to send workflow to FastAPI...", { workflow, minio_input_uri, workflow_id, trigger_conductor });
+
+  if (!workflow) throw new Error("Workflow object is required and cannot be undefined or null");
+  if (!minio_input_uri) throw new Error("minio_input_uri is required and cannot be undefined or null");
+
+  let workflowObj = workflow;
+  if (typeof workflow === "string") {
+    try {
+      workflowObj = JSON.parse(workflow);
+    } catch {
+      throw new Error("workflow is a string but not valid JSON");
+    }
+  }
+
+  const bodyPayload = {
+    workflow: workflowObj,
+    minio_input_uri,
+    workflow_id,
+    trigger_conductor,
+  };
+
+  console.log("Sending payload to FastAPI:", bodyPayload);
+
+  try {
+    const response = await fetch(`${conductorUrl}/workflow/deploy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(bodyPayload),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`FastAPI Error: ${errText}`);
+    }
+
+    const data = await response.json();
+    console.log("Response from FastAPI:", data);
+    return data;
+  } catch (err: any) {
+    console.error("Failed to call FastAPI:", err.message);
+    throw err;
+  }
+}
+
+
+

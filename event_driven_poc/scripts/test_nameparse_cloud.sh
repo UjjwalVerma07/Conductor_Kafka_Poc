@@ -8,7 +8,7 @@ function test_nameparse_cloud {
   stats_url="scp://abinitio@papdpsetld003l.intra.infousa.com//abi/log/UQU_${jobid}.2771.stats.jsonl"
   execution_id="WBNameParse"
   dagid="nua-nameparse-process-stage-v02-00-06-tiny"
-  session_token="40ffda67-6c02-4988-8256-d4a9fdae0fb7.Cc_OGKLNGfOYsq5liqmiNRcdHyw"
+  session_token="013b2ac3-11e2-49fb-811a-91ef9b3297c4.MzL7GyJFtIuBGSaZsP0f5GZ2-3M"
   # Session identifier (use first arg or fallback to PID)
   session=${1:-$$}
   echo "Session ID: $session"

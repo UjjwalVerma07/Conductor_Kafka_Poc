@@ -1,87 +1,102 @@
-"""
-Ingestion Service - Handles file transfer from MinIO to S3 and workflow preparation
-"""
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Dict, Any, Optional
 from ingestion_service import IngestionService
+from conductor_api import deployConductorWorkflow, triggerConductorWorkflow
 import os
+import time
 from dotenv import load_dotenv
-from typing import Dict, Any
 
-# Load environment variables
+# Load environment variables from .env
 load_dotenv()
 
-# Initialize FastAPI app
-app = FastAPI(
-    title="Ingestion Service",
-    description="Service to handle file ingestion from MinIO to S3 and prepare workflow definitions",
-    version="1.0.0"
+# Initialize FastAPI
+app = FastAPI(title="Ingestion Service", version="1.1.0")
+
+# Enable CORS for testing
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # allow all origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Initialize IngestionService
+# Conductor server URL from environment or default
+CONDUCTOR_URL = os.getenv("CONDUCTOR_URL", "http://conductor-server-event:8080")
+
+# Initialize ingestion service
 ingestion_service = IngestionService()
 
 
-class WorkflowRequest(BaseModel):
-    workflow: Dict[str, Any]  # Full workflow JSON from UI
-    metadata_url: str          # URL of the JSON template that contains input/output URIs
-    workflow_id: str           # Workflow instance ID (optional for logging)
-    
-
-@app.get("/")
-async def root():
-    """Health check endpoint"""
-    return {
-        "service": "ingestion-service",
-        "status": "running",
-        "version": "1.0.0"
-    }
+# Pydantic model for workflow payload
+class WorkflowPayload(BaseModel):
+    workflow: Dict[str, Any]
+    workflow_id: Optional[str] = None
+    trigger_conductor: Optional[bool] = True
 
 
-@app.get("/health")
-async def health():
-    """Health check endpoint"""
-    return {"status": "healthy"}
-
-
-@app.post("/ingest")
-async def ingest_workflow(request: WorkflowRequest):
-    """
-    Endpoint to ingest workflow and dynamically process service chain.
-    Updates workflow JSON with input/output URIs for each service.
-    """
+@app.post("/workflow/deploy")
+async def deploy_workflow(payload: WorkflowPayload):
     try:
-        workflow_json = request.workflow
-        metadata_url = request.metadata_url
-        workflow_id = request.workflow_id
+        # Hardcoded MinIO URI for ingestion
+        minio_input_uri = "minio://raw-data/1000861642.in"
+        print("Using hardcoded MinIO URI:", minio_input_uri)
 
-        # Step 1: Execute the service chain dynamically
-        result = ingestion_service.execute_service_chain(
-            workflow_json=workflow_json,
-            metadata_url=metadata_url,
-            workflow_id=workflow_id
+        # 1️⃣ Execute ingestion only for trigger_airflow_dag tasks
+        service_results,_ = ingestion_service.execute_service_chain(
+            workflow_json=payload.workflow,
+            minio_input_uri=minio_input_uri,
+            workflow_id=payload.workflow_id
         )
 
-        # Step 2: Update workflow template with real URIs
+        # 2️⃣ Update workflow template with updated metadata URLs
         updated_workflow = ingestion_service.update_workflow_template(
-            workflow_json=workflow_json,
-            metadata_url=metadata_url
+            workflow_json=payload.workflow,
+            service_results=service_results
         )
 
-        return JSONResponse(
-            status_code=200,
-            content={
-                "message": "Workflow ingested and updated successfully",
-                "service_chain_result": result,
-                "updated_workflow": updated_workflow
-            }
-        )
+        # 3️⃣ Ensure workflow has a version
+        if "version" not in updated_workflow:
+            updated_workflow["version"] = int(time.time())
+
+        workflow_instance_id = None
+        if payload.trigger_conductor:
+            # 4️⃣ Deploy workflow to Conductor
+            deployConductorWorkflow(CONDUCTOR_URL, updated_workflow)
+
+            # 5️⃣ Trigger workflow instance
+            workflow_instance_id = triggerConductorWorkflow(
+                CONDUCTOR_URL,
+                updated_workflow.get("name"),
+                inputParams={},
+                version=updated_workflow.get("version")
+            )
+
+        # 6️⃣ Get ingestion results for first executed task (if any)
+        first_service_name = list(service_results.keys())[0] if service_results else None
+        first_result = service_results.get(first_service_name, {})
+
+        return {
+            "runId": first_result.get("run_id"),
+            "s3_input_uri": first_result.get("s3_input_uri"),
+            "s3_output_uri": first_result.get("s3_output_uri"),
+            "s3_report_uri": first_result.get("s3_report_uri"),
+            "updated_json_uri": first_result.get("updated_json_uri"),
+            "updated_json_s3_key": first_result.get("updated_json_s3_key"),
+            "workflow_instance_id": workflow_instance_id,
+            "message": (
+                "Workflow deployed and triggered successfully"
+                if workflow_instance_id else "Workflow deployed without triggering Conductor"
+            )
+        }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error ingesting workflow: {str(e)}")
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+        import traceback
+        print("Error deploying workflow:", str(e))
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to deploy workflow: {str(e)}"
+        )

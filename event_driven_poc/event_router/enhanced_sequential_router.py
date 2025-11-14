@@ -601,6 +601,7 @@ class EnhancedSequentialEventRouter:
             except KeyboardInterrupt:
                 logger.info("Shutting down Enhanced Event Router...")
                 self.running = False
+                
                 conductor_future.cancel()
                 results_future.cancel()
 
