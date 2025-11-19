@@ -62,21 +62,6 @@ class S3Manager:
             )
     
     def download_json(self, s3_key: str) -> Dict[str, Any]:
-        """
-        Download JSON file from S3
-        
-        Args:
-            s3_key: S3 key (path) of the JSON file
-            
-        Returns:
-            Parsed JSON as dictionary
-            
-        Raises:
-            ClientError: If download fails
-            json.JSONDecodeError: If file is not valid JSON
-            ValueError: If S3 key doesn't use allowed prefix
-        """
-
         """This is the JSON file that is downloaded from the S3 bucket (Nameparse.json) that is stored in the AWS S3 buket."""
         # Validate S3 key uses correct prefix
         self._validate_s3_key(s3_key)
@@ -91,22 +76,6 @@ class S3Manager:
             raise Exception(f"Invalid JSON in {s3_key}: {str(e)}")
     
     def upload_json(self, data: Dict[str, Any], s3_key: str) -> str:
-        """
-        Upload JSON data to S3
-        
-        Args:
-            data: Dictionary to upload as JSON
-            s3_key: S3 key (path) where to upload
-            
-        Returns:
-            S3 URI of uploaded file
-            
-        Raises:
-            ClientError: If upload fails
-            ValueError: If S3 key doesn't use allowed prefix
-        """
-
-        """This is the JSON file that is uploaded to the S3 Bucket (Nameparse.json) that is stored in the AWS S3 bucket."""
         # Validate S3 key uses correct prefix
         self._validate_s3_key(s3_key)
         
@@ -124,20 +93,6 @@ class S3Manager:
 
     
     def upload_file(self, local_path: str, s3_key: str) -> str:
-        """
-        Upload a file to S3
-        
-        Args:
-            local_path: Local file path
-            s3_key: S3 key (path) where to upload
-            
-        Returns:
-            S3 URI of uploaded file
-            
-        Raises:
-            ClientError: If upload fails
-            ValueError: If S3 key doesn't use allowed prefix
-        """
         """This is the file that is uploaded to the S3 Bucket that is stored in the AWS S3 Bucket."""
         # Validate S3 key uses correct prefix
         self._validate_s3_key(s3_key)
@@ -149,20 +104,6 @@ class S3Manager:
             raise Exception(f"Failed to upload file {local_path} to S3: {str(e)}")
     
     def download_file(self, s3_key: str, local_path: str) -> str:
-        """
-        Download a file from S3 to local path
-        
-        Args:
-            s3_key: S3 key (path) of the file
-            local_path: Local path where to save the file
-            
-        Returns:
-            Local file path
-            
-        Raises:
-            ClientError: If download fails
-            ValueError: If S3 key doesn't use allowed prefix
-        """
         # Validate S3 key uses correct prefix
         self._validate_s3_key(s3_key)
         
@@ -183,32 +124,6 @@ class S3Manager:
         report_uri: Optional[str] = None,
         workflow_id: Optional[str] = None
     ) -> Dict[str, Any]:
-        """
-        Update input, output, and report URIs in JSON data based on 1000861509.WBNameParse.json structure
-        
-        JSON Structure:
-        {
-            "service": {
-                "input": {"uri": "..."},
-                "output": {"uri": "..."},
-                "report": {"uri": "..."}
-            },
-            "metadata": {
-                "environment": [{"name": "WORKFLOW_ID", "value": "..."}]
-            }
-        }
-        
-        Args:
-            json_data: JSON dictionary to update (structure like 1000861509.WBNameParse.json)
-            input_uri: New input URI (S3 path) - updates service.input.uri
-            output_uri: New output URI (S3 path) - updates service.output.uri
-            report_uri: Optional report URI (S3 path) - updates service.report.uri
-            workflow_id: Optional workflow ID to update in metadata.environment
-            
-        Returns:
-            Updated JSON dictionary
-        """
-
         """This is the JSON file that is updated with the input, output, and report URIs that are stored in the AWS S3 Bucket."""
         updated_data = json.loads(json.dumps(json_data))  # Deep copy
         
@@ -242,25 +157,6 @@ class S3Manager:
         report_uri: Optional[str] = None,
         workflow_id: Optional[str] = None
     ) -> str:
-        """
-        Fetch JSON from S3, update URIs, and upload to new location
-        
-        This is the main function that:
-        1. Downloads existing JSON from S3 (e.g., 1000861509.WBNameParse.json)
-        2. Updates input, output, and report URIs (based on 1000861509.WBNameParse.json structure)
-        3. Uploads to new S3 location (e.g., runs/{run_id}/1000861509.WBNameParse.json)
-        
-        Args:
-            source_s3_key: S3 key of source JSON (e.g., "conductor-poc/1000861509.WBNameParse.json")
-            input_uri: New input URI to set (updates service.input.uri)
-            output_uri: New output URI to set (updates service.output.uri)
-            target_s3_key: S3 key where to upload updated JSON
-            report_uri: Optional report URI to set (updates service.report.uri)
-            workflow_id: Optional workflow ID to update in metadata.environment
-            
-        Returns:
-            S3 URI of uploaded file
-        """
         # Download source JSON
         json_data = self.download_json(source_s3_key)
         

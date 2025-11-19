@@ -44,29 +44,30 @@ async def deploy_workflow(payload: WorkflowPayload):
         minio_input_uri = "minio://raw-data/1000861642.in"
         print("Using hardcoded MinIO URI:", minio_input_uri)
 
-        # 1️⃣ Execute ingestion only for trigger_airflow_dag tasks
+        # Execute ingestion only for trigger_airflow_dag tasks
+        # This will update the input and output uris in json files in our case we will have Nameparse json and Email Hygiene json file
         service_results,_ = ingestion_service.execute_service_chain(
             workflow_json=payload.workflow,
             minio_input_uri=minio_input_uri,
             workflow_id=payload.workflow_id
         )
 
-        # 2️⃣ Update workflow template with updated metadata URLs
+        #  Update workflow template with updated metadata URLs
         updated_workflow = ingestion_service.update_workflow_template(
             workflow_json=payload.workflow,
             service_results=service_results
         )
 
-        # 3️⃣ Ensure workflow has a version
+        #  Ensure workflow has a version
         if "version" not in updated_workflow:
             updated_workflow["version"] = int(time.time())
 
         workflow_instance_id = None
         if payload.trigger_conductor:
-            # 4️⃣ Deploy workflow to Conductor
+            #  Deploy workflow to Conductor
             deployConductorWorkflow(CONDUCTOR_URL, updated_workflow)
 
-            # 5️⃣ Trigger workflow instance
+            # Trigger workflow instance
             workflow_instance_id = triggerConductorWorkflow(
                 CONDUCTOR_URL,
                 updated_workflow.get("name"),
@@ -74,7 +75,7 @@ async def deploy_workflow(payload: WorkflowPayload):
                 version=updated_workflow.get("version")
             )
 
-        # 6️⃣ Get ingestion results for first executed task (if any)
+        # Get ingestion results for first executed task (if any)
         first_service_name = list(service_results.keys())[0] if service_results else None
         first_result = service_results.get(first_service_name, {})
 
