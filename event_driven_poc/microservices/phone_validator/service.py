@@ -54,20 +54,20 @@ class PhoneValidatorService:
         try:
             if not self.minio_client.bucket_exists(MINIO_BUCKET):
                 self.minio_client.make_bucket(MINIO_BUCKET)
-                logger.info(f"✅ Created bucket: {MINIO_BUCKET}")
+                logger.info(f" Created bucket: {MINIO_BUCKET}")
         except S3Error as e:
-            logger.error(f"❌ Error creating bucket: {e}")
+            logger.error(f" Error creating bucket: {e}")
     
     def _ensure_output_bucket_exists(self, bucket_name):
         """Ensure output bucket exists"""
         try:
             if not self.minio_client.bucket_exists(bucket_name):
                 self.minio_client.make_bucket(bucket_name)
-                logger.info(f"✅ Created output bucket: {bucket_name}")
+                logger.info(f"Created output bucket: {bucket_name}")
             else:
-                logger.info(f"✅ Output bucket exists: {bucket_name}")
+                logger.info(f"Output bucket exists: {bucket_name}")
         except S3Error as e:
-            logger.error(f"❌ Error creating output bucket: {e}")
+            logger.error(f" Error creating output bucket: {e}")
     
     def download_file(self, bucket, key):
         """Download file from MinIO"""
@@ -76,10 +76,10 @@ class PhoneValidatorService:
             data = response.read()
             response.close()
             response.release_conn()
-            logger.info(f"✅ Downloaded file: {bucket}/{key}")
+            logger.info(f"Downloaded file: {bucket}/{key}")
             return data
         except S3Error as e:
-            logger.error(f"❌ Error downloading file {bucket}/{key}: {e}")
+            logger.error(f" Error downloading file {bucket}/{key}: {e}")
             raise
     
     def upload_file(self, bucket, key, data):
@@ -89,13 +89,14 @@ class PhoneValidatorService:
             self.minio_client.put_object(
                 bucket, key, data_stream, len(data)
             )
-            logger.info(f"✅ Uploaded file: {bucket}/{key}")
+            logger.info(f" Uploaded file: {bucket}/{key}")
         except S3Error as e:
-            logger.error(f"❌ Error uploading file {bucket}/{key}: {e}")
+            logger.error(f"Error uploading file {bucket}/{key}: {e}")
             raise
     
     def validate_phone(self, phone):
         """Validate phone number (US format)"""
+        """Basic Phone Validation Logic - can be enhanced as needed"""
         # Remove all non-digit characters
         digits = re.sub(r'\D', '', str(phone))
         
@@ -112,11 +113,11 @@ class PhoneValidatorService:
         try:
             # Read CSV from bytes
             df = pd.read_csv(io.BytesIO(csv_data))
-            logger.info(f"📊 Processing CSV with {len(df)} rows")
+            logger.info(f" Processing CSV with {len(df)} rows")
             
             # Assume phone column is named 'phone'
             if 'phone' not in df.columns:
-                logger.error("❌ No 'phone' column found in CSV")
+                logger.error("No 'phone' column found in CSV")
                 return None, 0, 0
             
             # Validate phone numbers
@@ -133,11 +134,11 @@ class PhoneValidatorService:
             # Convert back to CSV
             output_csv = valid_df.to_csv(index=False)
             
-            logger.info(f"✅ Phone validation completed: {valid_phones}/{total_records} valid")
+            logger.info(f" Phone validation completed: {valid_phones}/{total_records} valid")
             return output_csv.encode('utf-8'), valid_phones, invalid_phones
             
         except Exception as e:
-            logger.error(f"❌ Error processing CSV: {e}")
+            logger.error(f"Error processing CSV: {e}")
             raise
     
     def process_task_event(self, event):
@@ -157,14 +158,14 @@ class PhoneValidatorService:
             if output_key and 'null' in output_key:
                 output_key = f'phone_validated_{workflow_id}.csv'
             
-            logger.info(f"📱 Processing phone validation for workflow {workflow_id}")
-            logger.info(f"📁 Input: {input_bucket}/{input_key}")
-            logger.info(f"📁 Output: {output_bucket}/{output_key}")
+            logger.info(f" Processing phone validation for workflow {workflow_id}")
+            logger.info(f" Input: {input_bucket}/{input_key}")
+            logger.info(f" Output: {output_bucket}/{output_key}")
             
             # Sleep for 10 seconds to simulate processing time
-            logger.info("⏳ Sleeping for 10 seconds to simulate processing time...")
+            logger.info("Sleeping for 10 seconds to simulate processing time...")
             time.sleep(10)
-            logger.info("✅ Sleep completed, continuing with processing...")
+            logger.info("Sleep completed, continuing with processing...")
             
             # Ensure output bucket exists
             self._ensure_output_bucket_exists(output_bucket)
@@ -202,10 +203,10 @@ class PhoneValidatorService:
             #self.kafka_producer.send('phone-validation-results', result_event)
             self.kafka_producer.flush()
             
-            logger.info(f"✅ Phone validation completed: {valid_count} valid, {invalid_count} invalid")
+            logger.info(f" Phone validation completed: {valid_count} valid, {invalid_count} invalid")
             
         except Exception as e:
-            logger.error(f"❌ Error processing phone validation: {e}", exc_info=True)
+            logger.error(f" Error processing phone validation: {e}", exc_info=True)
             
             # Publish failure event
             failure_event = {
@@ -235,7 +236,7 @@ class PhoneValidatorService:
             group_id=f'{SERVICE_NAME}-group'
         )
         
-        logger.info(f"🚀 {SERVICE_NAME} started - listening for phone validation events")
+        logger.info(f"{SERVICE_NAME} started - listening for phone validation events")
         
         for message in consumer:
             try:
@@ -246,28 +247,28 @@ class PhoneValidatorService:
                     try:
                         event = json.loads(event)
                     except json.JSONDecodeError:
-                        logger.error(f"❌ Failed to parse JSON string: {event}")
+                        logger.error(f"Failed to parse JSON string: {event}")
                         continue
-                
+                #And if it is already a json object then we can directly process it 
                 event_type = event.get('eventType', 'unknown')
                 
                 if event_type == 'phone_validation_request':
-                    logger.info(f"📱 Processing phone validation request")
+                    logger.info(f"Processing phone validation request")
                     self.process_task_event(event)
                 else:
-                    logger.warning(f"⚠️ Ignoring event type: {event_type}")
+                    logger.warning(f"Ignoring event type: {event_type}")
                     
             except Exception as e:
-                logger.error(f"💥 Error processing message: {e}", exc_info=True)
+                logger.error(f"Error processing message: {e}", exc_info=True)
 
 def main():
     """Start the Phone Validator Service"""
-    logger.info(f"🚀 Starting {SERVICE_NAME} Service")
-    logger.info(f"🔌 Kafka: {KAFKA_BOOTSTRAP}")
-    logger.info(f"📦 MinIO: {MINIO_ENDPOINT}")
+    logger.info(f" Starting {SERVICE_NAME} Service")
+    logger.info(f" Kafka: {KAFKA_BOOTSTRAP}")
+    logger.info(f"MinIO: {MINIO_ENDPOINT}")
     
     # Wait for services to be ready
-    logger.info("⏳ Waiting 10 seconds for services to initialize...")
+    logger.info(" Waiting 10 seconds for services to initialize...")
     time.sleep(10)
     
     # Start service

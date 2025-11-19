@@ -1,7 +1,7 @@
-#!/usr/bin/env python3
+#! /usr/bin/env python
 """
-Airflow Adapter Service
-Simple service that triggers Airflow DAGs via script and notifies Conductor on completion
+Email Hygiene Microservice
+Simple service that triggers Email Hygiene Airflow DAGs via script and notifies Conductor upon completion.
 """
 
 import os
@@ -12,16 +12,17 @@ import subprocess
 import requests
 from kafka import KafkaConsumer, KafkaProducer
 
-# Configure logging
+#Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
+
+logger=logging.getLogger(__name__)
 
 # Configuration
-KAFKA_BOOTSTRAP = os.getenv('KAFKA_BOOTSTRAP', 'localhost:9092')
-SERVICE_NAME = os.getenv('SERVICE_NAME', 'airflow-adapter')
+KAFKA_BOOTSTRAP=os.getenv('KAFKA_BOOTSTRAP','localhost:9092')
+SERVICE_NAME=os.getenv('SERVICE_NAME','email_hygiene_service')
 
 # MWAA Configuration
 MWAA_ENDPOINT = os.getenv('MWAA_ENDPOINT', 'https://a53c6d7a-ec07-465a-9824-6cc199145a7a-vpce.c75.us-east-1.airflow.amazonaws.com:443')
@@ -31,29 +32,27 @@ MWAA_SESSION_TOKEN = os.getenv('MWAA_SESSION_TOKEN', '')
 DAG_POLL_INTERVAL = int(os.getenv('DAG_POLL_INTERVAL', '10'))  # seconds between status checks
 DAG_MAX_WAIT_TIME = int(os.getenv('DAG_MAX_WAIT_TIME', '3600'))  # max time to wait (1 hour default)
 
-# Script path
-SCRIPT_PATH = os.path.join(os.path.dirname(__file__), 'trigger_airflow.sh')
+SCRIPT_PATH=os.path.join(os.path.dirname(__file__),'trigger_email_hygiene.sh')
 
-# Initialize Kafka producer
-kafka_producer = KafkaProducer(
+kafka_producer=KafkaProducer(
     bootstrap_servers=KAFKA_BOOTSTRAP,
     value_serializer=lambda v: json.dumps(v).encode('utf-8')
 )
 
+class EmailHygieneService:
+    """Email Hygiene Microservice Class Triggers Airflow DAGS and Notifies Conductor"""
 
-class AirflowAdapterService:
-    """Airflow Adapter Service - Triggers Airflow DAGs and notifies Conductor"""
-    
     def __init__(self):
-        self.kafka_producer = kafka_producer
-        self.script_path = SCRIPT_PATH
-        
-        # Ensure script is executable
-        os.chmod(self.script_path, 0o755)
-        
-        logger.info(f"Airflow Adapter Service initialized")
-        logger.info(f"   Script: {self.script_path}")
+        self.kafka_producer=kafka_producer
+        self.script_path=SCRIPT_PATH
+
+        os.chmod(self.script_path, 0o755)  # Ensure script is executable
+        logger.info(f"Email Hygiene Service initialized.")
+        logger.info(f"Script:{self.script_path}")
     
+
+
+
     def trigger_dag_run(self, jobid, session_id, metadata_url, execution_id, dag_id=None, stats_url=None):
         """Trigger Airflow DAG run and return dag_run_id"""
         try:
@@ -157,33 +156,30 @@ class AirflowAdapterService:
             logger.error(f" {error_msg}")
             return False, None
     
-    def check_dag_run_status(self, dag_id, dag_run_id):
+
+    def check_dag_run_status(self,dag_id,dag_run_id):
         """Check the status of a DAG run using Airflow API"""
         try:
-            endpoint = MWAA_ENDPOINT
-            session_token = MWAA_SESSION_TOKEN
-            
+            endpoint=MWAA_ENDPOINT
+            session_token=MWAA_SESSION_TOKEN
+
             if not session_token:
-                logger.error(" MWAA_SESSION_TOKEN not configured")
-                return None, "Session token not configured"
-            
-            # Build API URL
-            api_url = f"{endpoint}/api/v1/dags/{dag_id}/dagRuns/{dag_run_id}"
-            
-            # Make API call
-            response = requests.get(
+                logger.error("MWAA_SESSION_TOKEN not configured.")
+                return None,"Session token not configured."
+            api_url=f"{endpoint}/api/v1/dags/{dag_id}/dagRuns/{dag_run_id}"
+
+            response=requests.get(
                 api_url,
-                cookies={'session': session_token},
-                headers={'Content-Type': 'application/json'},
+                cookies={'session':session_token},
+                headers={'Content-Type':'application/json'},
                 timeout=30
             )
-            
-            if response.status_code == 200:
-                dag_run_data = response.json()
-                state = dag_run_data.get('state', 'unknown')
-                return state, None
-            elif response.status_code == 404:
-                return None, f"DAG run not found: {dag_run_id}"
+            if response.status_code==200:
+                dag_run_data=response.json()
+                state=dag_run_data.get('state','unknown')
+                return state,None
+            elif response.status_code==404:
+                return None,f"DAG run {dag_run_id} not found."
             else:
                 return None, f"API error: {response.status_code} - {response.text}"
                 
@@ -191,119 +187,114 @@ class AirflowAdapterService:
             return None, f"Network error: {str(e)}"
         except Exception as e:
             return None, f"Error checking status: {str(e)}"
+                
     
-    def wait_for_dag_completion(self, dag_id, dag_run_id, timeout=None):
+    def wait_for_dag_completion(self,dag_id,dag_run_id,timeout=None):
         """
         Poll DAG run status until it completes (success or failed)
-        
-        Returns:
-            (success: bool, final_state: str, error_message: str)
+        Returs:
+           (success:bool,final_state:str,error_message:str)
         """
-        timeout = timeout or DAG_MAX_WAIT_TIME
-        start_time = time.time()
-        poll_interval = DAG_POLL_INTERVAL
-        
-        logger.info(f" Monitoring DAG run: {dag_run_id}")
+
+        timeout=timeout or DAG_MAX_WAIT_TIME
+        start_time=time.time()
+        poll_interval=DAG_POLL_INTERVAL
+
+        logger.info(f"Monitoring DAG run: {dag_run_id}")
         logger.info(f"   Poll interval: {poll_interval}s, Max wait: {timeout}s")
-        
+
         while True:
-            # Check if timeout exceeded
-            elapsed = time.time() - start_time
+            elapsed=time.time()-start_time
             if elapsed > timeout:
-                logger.error(f"Timeout waiting for DAG run to complete ({timeout}s)")
-                return False, 'timeout', f"DAG run did not complete within {timeout} seconds"
+                logger.error(f"Timout waiting for DAG run to complete ({timeout}s)")
+                return False,'timeout',f"DAG run did not complete within {timeout} seconds."
             
-            # Check status
-            state, error = self.check_dag_run_status(dag_id, dag_run_id)
-            
+            state,error=self.check_dag_run_status(dag_id,dag_run_id)
             if error:
-                logger.error(f"Error checking status: {error}")
-                return False, 'error', error
+                logger.error(f"Error checking DAG run status: {error}")
+                return False,'error',error
             
             if state is None:
-                logger.warning(f"Could not determine DAG run status")
+                logger.info(f"Could not determin DAG run status")
                 time.sleep(poll_interval)
                 continue
-            
             logger.info(f"DAG Run Status: {state} (elapsed: {int(elapsed)}s)")
-            
-            # Check if DAG run is complete
-            if state in ['success', 'failed', 'skipped', 'upstream_failed']:
-                if state == 'success':
-                    logger.info(f"DAG run completed successfully")
-                    return True, state, None
+
+            if state in ['success','failed','skipped','upstream_failed']:
+                if state=='success':
+                    return True,state,None
                 else:
-                    logger.error(f" DAG run completed with state: {state}")
-                    return False, state, f"DAG run ended with state: {state}"
-            
-            # Still running, wait and check again
+                    logger.error(f"DAG run completed with state: {state}")
+                    return False,state,f"DAG run completed with state: {state}" 
+
             if state in ['queued', 'running', 'up_for_retry', 'up_for_reschedule']:
                 time.sleep(poll_interval)
                 continue
             
             # Unknown state
             logger.warning(f"Unknown DAG run state: {state}, continuing to monitor...")
-            time.sleep(poll_interval)
+            time.sleep(poll_interval)            
     
-    
-    def publish_completion_event(self, workflow_id, task_id, dag_id, jobid, 
-                                  status, error_message=None, metadata_url=None):
-        """Publish completion event to Conductor - Pure event-driven approach"""
+
+    def publish_completion_event(self,workflow_id,task_id,dag_id,jobid,status,
+                                 error_message=None,metadata_url=None):
+        """Publish task completion event to Conductor - Pure event-driven Approach"""
         try:
-            # Event type must match the sink in EVENT task: "conductor:airflow_dag_completed"
-            event_type = "airflow_dag_completed"
-            
-            completion_event = {
-                "workflowId": workflow_id,
-                "taskId": task_id,
-                "eventType": event_type,  # Matches sink in workflow EVENT task
-                "data": {
-                    "dag_id": dag_id,
-                    "jobid": jobid,
-                    "status": status,
-                    "result": "success" if status == "success" else "failure",
-                    "pipelineStage": "airflow_processing",
-                    "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ')
+            #Event type must match the sink in EVENT task: "conductor:email_hygiene_completed"
+            event_type="email_hygiene_completed"
+            completion_event={
+                "workflowId":workflow_id,
+                "taskId":task_id,
+                "eventType":event_type, # Matches sink in workflow EVENT task
+                "data":{
+                    "dag_id":dag_id,
+                    "jobid":jobid,
+                    "status":status,
+                    "result":"success" if status=="success" else "failure",
+                    "pipelineStage":"email_hygiene_processing",
+                    "timestamp":time.strftime("%Y-%m-%dT%H:%M:%SZ")
+
                 }
             }
-            
-            # Add metadata_url if available
+
+            # Add metadat_url if available
             if metadata_url:
-                completion_event["data"]["metadata_url"] = metadata_url
+                completion_event['data']['metadata_url']=metadata_url
             
             # Add error message if failed
-            if status == "failed" and error_message:
-                completion_event["data"]["error"] = error_message
-            
-            # Publish directly to conductor-events (pure event-driven, no API calls)
-            # Conductor's event processor will match this to the EVENT task
-            self.kafka_producer.send('conductor-events', completion_event)
+            if status=="failed" and error_message:
+                completion_event['data']['error_message']=error_message
+
+
+            #Publish directly to conductor-events
+            #Conductor's event processor will match this to the EVENT task
+            self.kafka_producer.send('conductor-events',completion_event)
             self.kafka_producer.flush()
-            
-            logger.info(f"Published completion event to conductor-events for workflow {workflow_id}")
-            logger.info(f"   Event Type: {event_type}")
-            logger.info(f"   DAG: {dag_id}, Job: {jobid}, Status: {status}")
-            
+
+            logger.info(f"Published completion event to Conductor for Workflow ID: {workflow_id}, Task ID: {task_id}, Status: {status}")
+            logger.info(f" Event Type: {event_type}")
+            logger.info(f"DAG: {dag_id}, Job ID: {jobid} , Status: {status}")
+
         except Exception as e:
-            logger.error(f"Error publishing completion event: {e}", exc_info=True)
-    
-    def process_task_event(self, event):
-        """Process a task event from Kafka - Simple flow: trigger script and notify Conductor"""
+            logger.error(f"Error publishing completion event: {e}",exc_info=True)
+
+
+    def process_task_event(self,event):
+        """Process a task event from Kafka- Simple flow:trigger script and notify Conductor"""
         try:
-            workflow_id = event.get('workflowId')
-            task_id = event.get('taskId')
-            data = event.get('data', {})
-            
-            # Extract Airflow configuration
-            dag_id = data.get('dag_id', 'nua-nameparse-process-stage-v02-00-06-tiny')
-            execution_id = data.get('execution_id', 'WBNameParse')
-            # Note: metadata_url and stats_url use defaults from trigger_airflow.sh
-            # We don't extract or pass them - script will use its default values
-            metadata_url = None  # Not used - script has default
-            
-            # Base job ID
-            base_jobid = '1000861509'
-            
+            workflow_id=event.get('workflowId')
+            task_id=event.get('taskId')
+            data=event.get('data',{})
+
+            #Extract Airflow Configuration
+            dag_id=data.get('dagId','nua-emailhygiene-process-stage-v01-01-04-tiny')
+            execution_id=data.get('executionId','WBEmailHygiene')
+
+            #Note:metadata_url and stats_url use defaults from trigger_email_hygiene.sh if not provided
+            #We don't extract or pass them -script will use its default values
+            metadata_url=None # Not used -script has default
+            base_jobid='1000876411' # Not used -script has default
+
             # Generate unique session ID from workflow_id (last 4 characters, padded to 4 digits)
             # This ensures each workflow run gets a unique DAG run ID
             #Without unique DAG run Id it will give Non-empty topic error in DAG logs
@@ -316,71 +307,72 @@ class AirflowAdapterService:
                 import os
                 session_id = f"{os.getpid() % 10000:04d}"
             
-            logger.info(f"Processing Airflow trigger request")
-            logger.info(f"   Workflow ID: {workflow_id}")
-            logger.info(f"   Task ID: {task_id}")
-            logger.info(f"   DAG ID: {dag_id}")
-            logger.info(f"   Base Job ID: {base_jobid}")
-            logger.info(f"   Session ID: {session_id}")
+            logger.info(f"Processing Email Hygiene request")
+            logger.info(f" Workflow ID: {workflow_id}")
+            logger.info(f"Task ID: {task_id}")
+            logger.info(f"DAG ID: {dag_id}")
+            logger.info(f"Base Job ID: {base_jobid}")
+            logger.info(f"Session ID: {session_id}")
             logger.info(f"   Final Job ID: {base_jobid}-{session_id}")
             logger.info(f"   Metadata URL: {metadata_url}")
             logger.info(f"   Execution ID: {execution_id}")
-            
-            # Step 1: Trigger the DAG run via script
-            # The script (trigger_airflow.sh) will call Airflow API to create the DAG run
-            logger.info(f"Step 1: Triggering DAG run via script...")
-            trigger_success, dag_run_id = self.trigger_dag_run(
+
+
+            #Step 1 : Trigger the DAG run via script
+            #The script (trigger_email_hygiene.sh) will call Airflow API to create the DAG run
+            logger.info(f"Step 1: Triggering DAG run via script..")
+            trigger_success,dag_run_id=self.trigger_dag_run(
                 jobid=base_jobid,
                 session_id=session_id,
                 metadata_url=metadata_url,
                 execution_id=execution_id,
                 dag_id=dag_id
             )
-            
-            #This is to check wether the script has successfully triggerd the DAG run or not 
+
+            #This is to check wether the script has successfully trigeered the DAG run or not 
             if not trigger_success or not dag_run_id:
-                # Failed to trigger DAG
-                logger.error(f" Failed to trigger DAG run via script")
-                full_jobid = f"{base_jobid}-{session_id}"
+                logger.error(f"Failed to trigger DAG run via script.")
+                full_job_id=f"{base_jobid}-{session_id}"
                 self.publish_completion_event(
                     workflow_id=workflow_id,
                     task_id=task_id,
                     dag_id=dag_id,
-                    jobid=full_jobid,
+                    jobid=full_job_id,
                     status="failed",
-                    error_message="Failed to trigger DAG run",
+                    error_message='Failed to trigger DAG run via script.',
                     metadata_url=metadata_url
                 )
                 return
             
             # Step 2: Wait for DAG run to complete
             # Poll Airflow API to check DAG run status until it completes
-            logger.info(f"Step 2: Waiting for DAG run to complete...")
+
+            logger.info(f"Step 2 : Waiting for DAG run to complete...")
             logger.info(f"Monitoring DAG run: {dag_run_id}")
-            dag_success, final_state, error_message = self.wait_for_dag_completion(
+            dag_success,final_state,error_message=self.wait_for_dag_completion(
                 dag_id=dag_id,
                 dag_run_id=dag_run_id
             )
-            
-            # Step 3: Publish completion event to Conductor
+
+            #Step 3 : Publish completion event to Conductor
             # Only proceed after DAG run completes (success or failure)
             logger.info(f"Step 3: Publishing completion event to Conductor...")
-            full_jobid = f"{base_jobid}-{session_id}"
+            full_job_id=f"{base_jobid}-{session_id}"
             self.publish_completion_event(
                 workflow_id=workflow_id,
                 task_id=task_id,
                 dag_id=dag_id,
-                jobid=full_jobid,
+                jobid=full_job_id,
                 status="success" if dag_success else "failed",
                 error_message=error_message,
                 metadata_url=metadata_url
             )
-            
-            logger.info(f"Airflow task completed for workflow {workflow_id}")
-            logger.info(f"   DAG Run ID: {dag_run_id}")
-            logger.info(f"   Final State: {final_state}")
-            logger.info(f"   Status: {'success' if dag_success else 'failed'}")
-            
+
+            logger.info(f"Email Hygiene task processing completed for Workflow ID: {workflow_id}, Task ID: {task_id}")
+            logger.info(f"DAG Run Id : {dag_run_id}")
+            logger.info(f"Final Status: {final_state}")
+            logger.info(f"Status : {'success' if dag_success else 'failed'}")
+
         except Exception as e:
             logger.error(f"Error processing Airflow task event: {e}", exc_info=True)
             
@@ -397,57 +389,55 @@ class AirflowAdapterService:
                 error_message=str(e),
                 metadata_url=None
             )
+
+
     
     def consume_task_events(self):
-        """Consume task events from Kafka"""
-        consumer = KafkaConsumer(
-            'airflow-trigger-requests',
+        """Consume task events from Kafka and process them."""
+        consumer=KafkaConsumer(
+            'email-hygiene-requests',
             bootstrap_servers=KAFKA_BOOTSTRAP,
             value_deserializer=lambda m: json.loads(m.decode('utf-8')),
-            auto_offset_reset='latest',
-            group_id=f'{SERVICE_NAME}-group'
+            auto_offset_reset="latest",
+            group_id=f"{SERVICE_NAME}-group"
         )
-        
-        logger.info(f"{SERVICE_NAME} started - listening for Airflow trigger events")
-        logger.info(f"   Kafka Topic: airflow-trigger-requests")
-        
+
+        logger.info(f"Consuming task events from 'email-hygiene-requests' topic...")
+        logger.info(f"{SERVICE_NAME} started - listening for Email Hygiene requests.")
+        logger.info(f"Kafka Topic: email-hygiene-requests")
+
         for message in consumer:
             try:
-                event = message.value
-                
+                event=message.value
+
                 # Handle both JSON object and string cases
-                if isinstance(event, str):
+                if isinstance(event,str):
                     try:
-                        event = json.loads(event)
+                        event=json.loads(event)
                     except json.JSONDecodeError:
-                        logger.error(f"Failed to parse JSON string: {event}")
+                        logger.error(f"Invalid JSON string received: {event}")
                         continue
-                
-                event_type = event.get('eventType', 'unknown')
-                
-                if event_type == 'airflow_trigger_request':
-                    logger.info(f"Received Airflow trigger request")
+
+                event_type=event.get('eventType','email_hygiene_request')
+                if event_type == 'email_hygiene_request':
                     self.process_task_event(event)
                 else:
-                    logger.warning(f"Ignoring event type: {event_type}")
-                    
+                    logger.warning(f"Unknown event type received: {event_type}")
+            
             except Exception as e:
-                logger.error(f"Error processing message: {e}", exc_info=True)
+                logger.error(f"Error processing message: {e}",exc_info=True)
 
 
 def main():
-    """Start the Airflow Adapter Service"""
-    logger.info(f"Starting {SERVICE_NAME} Service")
+    """Main function to start the Email Hygiene Service."""
+    logger.info(f"Starting {SERVICE_NAME} Service...")
     logger.info(f"Kafka: {KAFKA_BOOTSTRAP}")
-    
-    # Wait for services to be ready
+
     logger.info("Waiting 10 seconds for services to initialize...")
     time.sleep(10)
-    
-    # Start service
-    service = AirflowAdapterService()
+
+    service=EmailHygieneService()
     service.consume_task_events()
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

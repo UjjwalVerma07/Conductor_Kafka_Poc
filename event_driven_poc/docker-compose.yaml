@@ -232,11 +232,51 @@ services:
       - SERVICE_NAME=airflow-adapter
       # MWAA Configuration (Amazon Managed Workflows for Apache Airflow)
       - MWAA_ENDPOINT=${MWAA_ENDPOINT:-https://a53c6d7a-ec07-465a-9824-6cc199145a7a-vpce.c75.us-east-1.airflow.amazonaws.com:443}
-      - MWAA_SESSION_TOKEN=83dff951-892b-4a18-800c-17bfd6299e45.9H_qy43tXM3A6i0e0qJbBL5MOco
+      - MWAA_SESSION_TOKEN=dbb7b2fa-39cb-4d6a-a1ac-5ac08b23450c.CP26n15g_xdiBvBiP4i4_aD-rwA
       # DAG Monitoring Configuration
       - DAG_POLL_INTERVAL=${DAG_POLL_INTERVAL:-10}
       - DAG_MAX_WAIT_TIME=${DAG_MAX_WAIT_TIME:-3600}
       # Legacy Airflow Configuration (if using non-MWAA Airflow)
+      - AIRFLOW_HOST=papdpsaplr001l:8080
+      - AIRFLOW_USERNAME=airflow
+      - AIRFLOW_PASSWORD=airflow
+      - AIRFLOW_SERVER_HOST=papdpsaplr001l
+      - AIRFLOW_SERVER_USER=airflow
+      - AIRFLOW_SERVER_PASSWORD=airflow
+      # Note: If SSH requires AD credentials, set AIRFLOW_SERVER_PASSWORD to your AD password
+      # Or set AIRFLOW_SERVER_USER in format: DOMAIN\\username or username@domain.com
+      - AIRFLOW_METADATA_PATH=/opt/airflow/data/metadata
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - POLL_INTERVAL=30
+      - MAX_TIMEOUT=3600
+    extra_hosts:
+      - "papdpsaplr001l:10.35.75.11"
+      - "papdpsaplr001l.intra.infousa.com:10.35.75.11"
+    networks:
+      - event-driven-net
+    restart: unless-stopped
+
+
+  email-hygiene:
+    build: ./microservices/email_hygiene
+    container_name: email-hygiene-event
+    depends_on:
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      - KAFKA_BOOTSTRAP=kafka:9092
+      - SERVICE_NAME=email-hygiene
+      # MWAA Configuration (Amazon Managed Workflows for Apache Airflow)
+      - MWAA_ENDPOINT=${MWAA_ENDPOINT:-https://a53c6d7a-ec07-465a-9824-6cc199145a7a-vpce.c75.us-east-1.airflow.amazonaws.com:443}
+      - MWAA_SESSION_TOKEN=dbb7b2fa-39cb-4d6a-a1ac-5ac08b23450c.CP26n15g_xdiBvBiP4i4_aD-rwA
+      # DAG Monitoring Configuration
+      - DAG_POLL_INTERVAL=${DAG_POLL_INTERVAL:-10}
+      - DAG_MAX_WAIT_TIME=${DAG_MAX_WAIT_TIME:-3600}
+      # Legacy Airflow Configuration (if using non-MWAA Airflow))
       - AIRFLOW_HOST=papdpsaplr001l:8080
       - AIRFLOW_USERNAME=airflow
       - AIRFLOW_PASSWORD=airflow

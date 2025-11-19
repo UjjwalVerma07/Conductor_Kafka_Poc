@@ -54,20 +54,20 @@ class EnricherService:
         try:
             if not self.minio_client.bucket_exists(MINIO_BUCKET):
                 self.minio_client.make_bucket(MINIO_BUCKET)
-                logger.info(f"✅ Created bucket: {MINIO_BUCKET}")
+                logger.info(f" Created bucket: {MINIO_BUCKET}")
         except S3Error as e:
-            logger.error(f"❌ Error creating bucket: {e}")
+            logger.error(f" Error creating bucket: {e}")
     
     def _ensure_output_bucket_exists(self, bucket_name):
         """Ensure output bucket exists"""
         try:
             if not self.minio_client.bucket_exists(bucket_name):
                 self.minio_client.make_bucket(bucket_name)
-                logger.info(f"✅ Created output bucket: {bucket_name}")
+                logger.info(f" Created output bucket: {bucket_name}")
             else:
-                logger.info(f"✅ Output bucket exists: {bucket_name}")
+                logger.info(f" Output bucket exists: {bucket_name}")
         except S3Error as e:
-            logger.error(f"❌ Error creating output bucket: {e}")
+            logger.error(f" Error creating output bucket: {e}")
     
     def download_file(self, bucket, key):
         """Download file from MinIO"""
@@ -76,10 +76,10 @@ class EnricherService:
             data = response.read()
             response.close()
             response.release_conn()
-            logger.info(f"✅ Downloaded file: {bucket}/{key}")
+            logger.info(f" Downloaded file: {bucket}/{key}")
             return data
         except S3Error as e:
-            logger.error(f"❌ Error downloading file {bucket}/{key}: {e}")
+            logger.error(f" Error downloading file {bucket}/{key}: {e}")
             raise
     
     def upload_file(self, bucket, key, data):
@@ -89,9 +89,9 @@ class EnricherService:
             self.minio_client.put_object(
                 bucket, key, data_stream, len(data)
             )
-            logger.info(f"✅ Uploaded file: {bucket}/{key}")
+            logger.info(f"Uploaded file: {bucket}/{key}")
         except S3Error as e:
-            logger.error(f"❌ Error uploading file {bucket}/{key}: {e}")
+            logger.error(f" Error uploading file {bucket}/{key}: {e}")
             raise
     
     def enrich_data(self, df):
@@ -104,7 +104,7 @@ class EnricherService:
             
             return df
         except Exception as e:
-            logger.error(f"❌ Error enriching data: {e}")
+            logger.error(f" Error enriching data: {e}")
             raise
     
     def _get_customer_segment(self, row):
@@ -123,7 +123,7 @@ class EnricherService:
         try:
             # Read CSV from bytes
             df = pd.read_csv(io.BytesIO(csv_data))
-            logger.info(f"📊 Processing CSV with {len(df)} rows")
+            logger.info(f" Processing CSV with {len(df)} rows")
             
             # Enrich data
             enriched_df = self.enrich_data(df)
@@ -135,11 +135,11 @@ class EnricherService:
             # Convert back to CSV
             output_csv = enriched_df.to_csv(index=False)
             
-            logger.info(f"✅ Data enrichment completed: {enriched_records} records enriched")
+            logger.info(f" Data enrichment completed: {enriched_records} records enriched")
             return output_csv.encode('utf-8'), enriched_records, 0
             
         except Exception as e:
-            logger.error(f"❌ Error processing CSV: {e}")
+            logger.error(f" Error processing CSV: {e}")
             raise
     
     def process_task_event(self, event):
@@ -159,14 +159,14 @@ class EnricherService:
             if output_key and 'null' in output_key:
                 output_key = f'enriched_{workflow_id}.csv'
             
-            logger.info(f"🔍 Processing data enrichment for workflow {workflow_id}")
-            logger.info(f"📁 Input: {input_bucket}/{input_key}")
-            logger.info(f"📁 Output: {output_bucket}/{output_key}")
+            logger.info(f" Processing data enrichment for workflow {workflow_id}")
+            logger.info(f" Input: {input_bucket}/{input_key}")
+            logger.info(f" Output: {output_bucket}/{output_key}")
             
             # Sleep for 10 seconds to simulate processing time
-            logger.info("⏳ Sleeping for 10 seconds to simulate processing time...")
+            logger.info(" Sleeping for 10 seconds to simulate processing time...")
             time.sleep(10)
-            logger.info("✅ Sleep completed, continuing with processing...")
+            logger.info(" Sleep completed, continuing with processing...")
             
             # Ensure output bucket exists
             self._ensure_output_bucket_exists(output_bucket)
@@ -204,10 +204,10 @@ class EnricherService:
             #self.kafka_producer.send('enrichment-results', result_event)
             self.kafka_producer.flush()
             
-            logger.info(f"✅ Data enrichment completed: {enriched_count} records enriched")
+            logger.info(f" Data enrichment completed: {enriched_count} records enriched")
             
         except Exception as e:
-            logger.error(f"❌ Error processing data enrichment: {e}", exc_info=True)
+            logger.error(f" Error processing data enrichment: {e}", exc_info=True)
             
             # Publish failure event
             failure_event = {
@@ -237,7 +237,7 @@ class EnricherService:
             group_id=f'{SERVICE_NAME}-group'
         )
         
-        logger.info(f"🚀 {SERVICE_NAME} started - listening for enrichment events")
+        logger.info(f" {SERVICE_NAME} started - listening for enrichment events")
         
         for message in consumer:
             try:
@@ -248,28 +248,28 @@ class EnricherService:
                     try:
                         event = json.loads(event)
                     except json.JSONDecodeError:
-                        logger.error(f"❌ Failed to parse JSON string: {event}")
+                        logger.error(f" Failed to parse JSON string: {event}")
                         continue
                 
                 event_type = event.get('eventType', 'unknown')
                 
                 if event_type == 'enrichment_request':
-                    logger.info(f"🔍 Processing enrichment request")
+                    logger.info(f" Processing enrichment request")
                     self.process_task_event(event)
                 else:
-                    logger.warning(f"⚠️ Ignoring event type: {event_type}")
+                    logger.warning(f" Ignoring event type: {event_type}")
                     
             except Exception as e:
-                logger.error(f"💥 Error processing message: {e}", exc_info=True)
+                logger.error(f" Error processing message: {e}", exc_info=True)
 
 def main():
     """Start the Enricher Service"""
-    logger.info(f"🚀 Starting {SERVICE_NAME} Service")
-    logger.info(f"🔌 Kafka: {KAFKA_BOOTSTRAP}")
-    logger.info(f"📦 MinIO: {MINIO_ENDPOINT}")
+    logger.info(f" Starting {SERVICE_NAME} Service")
+    logger.info(f" Kafka: {KAFKA_BOOTSTRAP}")
+    logger.info(f" MinIO: {MINIO_ENDPOINT}")
     
     # Wait for services to be ready
-    logger.info("⏳ Waiting 10 seconds for services to initialize...")
+    logger.info(" Waiting 10 seconds for services to initialize...")
     time.sleep(10)
     
     # Start service

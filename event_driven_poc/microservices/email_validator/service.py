@@ -54,22 +54,22 @@ class EmailValidatorService:
         try:
             if not self.minio_client.bucket_exists(MINIO_BUCKET):
                 self.minio_client.make_bucket(MINIO_BUCKET)
-                logger.info(f"✅ Created bucket: {MINIO_BUCKET}")
+                logger.info(f"Created bucket: {MINIO_BUCKET}")
             else:
-                logger.info(f"✅ Bucket exists: {MINIO_BUCKET}")
+                logger.info(f"Bucket exists: {MINIO_BUCKET}")
         except S3Error as e:
-            logger.error(f"❌ Error creating bucket: {e}")
+            logger.error(f"Error creating bucket: {e}")
     
     def _ensure_output_bucket_exists(self, bucket_name):
         """Ensure output bucket exists"""
         try:
             if not self.minio_client.bucket_exists(bucket_name):
                 self.minio_client.make_bucket(bucket_name)
-                logger.info(f"✅ Created output bucket: {bucket_name}")
+                logger.info(f"Created output bucket: {bucket_name}")
             else:
-                logger.info(f"✅ Output bucket exists: {bucket_name}")
+                logger.info(f"Output bucket exists: {bucket_name}")
         except S3Error as e:
-            logger.error(f"❌ Error creating output bucket: {e}")
+            logger.error(f"Error creating output bucket: {e}")
     
     def download_file(self, bucket, key):
         """Download file from MinIO"""
@@ -78,10 +78,10 @@ class EmailValidatorService:
             data = response.read()
             response.close()
             response.release_conn()
-            logger.info(f"✅ Downloaded file: {bucket}/{key}")
+            logger.info(f"Downloaded file: {bucket}/{key}")
             return data
         except S3Error as e:
-            logger.error(f"❌ Error downloading file {bucket}/{key}: {e}")
+            logger.error(f"Error downloading file {bucket}/{key}: {e}")
             raise
     
     def upload_file(self, bucket, key, data):
@@ -91,13 +91,14 @@ class EmailValidatorService:
             self.minio_client.put_object(
                 bucket, key, data_stream, len(data)
             )
-            logger.info(f"✅ Uploaded file: {bucket}/{key}")
+            logger.info(f"Uploaded file: {bucket}/{key}")
         except S3Error as e:
-            logger.error(f"❌ Error uploading file {bucket}/{key}: {e}")
+            logger.error(f"Error uploading file {bucket}/{key}: {e}")
             raise
     
     def validate_email(self, email):
         """Validate single email address"""
+        #just a simple regex for the email validation can be enhanced as per requirement
         pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         return re.match(pattern, email) is not None
     
@@ -106,11 +107,11 @@ class EmailValidatorService:
         try:
             # Read CSV from bytes
             df = pd.read_csv(io.BytesIO(csv_data))
-            logger.info(f"📊 Processing CSV with {len(df)} rows")
+            logger.info(f"Processing CSV with {len(df)} rows")
             
             # Assume email column is named 'email'
             if 'email' not in df.columns:
-                logger.error("❌ No 'email' column found in CSV")
+                logger.error("No 'email' column found in CSV")
                 return None, 0, 0
             
             # Validate emails
@@ -127,11 +128,11 @@ class EmailValidatorService:
             # Convert back to CSV
             output_csv = valid_df.to_csv(index=False)
             
-            logger.info(f"✅ Email validation completed: {valid_emails}/{total_records} valid")
+            logger.info(f"Email validation completed: {valid_emails}/{total_records} valid")
             return output_csv.encode('utf-8'), valid_emails, invalid_emails
             
         except Exception as e:
-            logger.error(f"❌ Error processing CSV: {e}")
+            logger.error(f"Error processing CSV: {e}")
             raise
     
     def process_task_event(self, event):
@@ -148,22 +149,22 @@ class EmailValidatorService:
             output_key = data.get('output_key')
             
             # Fix null values in output_key by using workflow_id
-            logger.info(f"🔍 Before fix - output_key: {output_key}")
+            logger.info(f"Before fix - output_key: {output_key}")
             if output_key and 'null' in output_key:
                 output_key = f'email_validated_{workflow_id}.csv'
-                logger.info(f"🔧 Fixed output_key to: {output_key}")
+                logger.info(f"Fixed output_key to: {output_key}")
             else:
-                logger.info(f"🔍 No fix needed - output_key: {output_key}")
+                logger.info(f"No fix needed - output_key: {output_key}")
             
-            logger.info(f"📧 Processing email validation for workflow {workflow_id}")
-            logger.info(f"📁 Input: {input_bucket}/{input_key}")
-            logger.info(f"📁 Output: {output_bucket}/{output_key}")
-            logger.info(f"🔍 Raw data received: {data}")
+            logger.info(f"Processing email validation for workflow {workflow_id}")
+            logger.info(f"Input: {input_bucket}/{input_key}")
+            logger.info(f"Output: {output_bucket}/{output_key}")
+            logger.info(f"Raw data received: {data}")
             
             # Sleep for 10 seconds to simulate processing time
-            logger.info("⏳ Sleeping for 10 seconds to simulate processing time...")
+            logger.info("Sleeping for 10 seconds to simulate processing time...")
             time.sleep(10)
-            logger.info("✅ Sleep completed, continuing with processing...")
+            logger.info("Sleep completed, continuing with processing...")
             
             # Ensure output bucket exists
             self._ensure_output_bucket_exists(output_bucket)
@@ -177,7 +178,7 @@ class EmailValidatorService:
             # Upload processed file
             self.upload_file(output_bucket, output_key, output_data)
             
-            # Publish result event
+            # Publish result event to the Conductor events topic
             result_event = {
                        "workflowId": workflow_id,
                        "taskId": task_id,
@@ -195,8 +196,7 @@ class EmailValidatorService:
                        }
                    }
             
-            # Publish directly to Conductor (NO Event Router is used here )
-            # Use workflowId as key to help Conductor route the event
+            # Publish Failure event also to Conductor events topic
             try:
                 future = self.kafka_producer.send(
                     'conductor-events',
@@ -206,17 +206,17 @@ class EmailValidatorService:
                 
                 # Wait for send to complete and log result
                 record_metadata = future.get(timeout=10)
-                logger.info(f"✅ Published completion event to conductor-events for workflow {workflow_id}")
+                logger.info(f"Published completion event to conductor-events for workflow {workflow_id}")
                 logger.info(f"   Topic: {record_metadata.topic}, Partition: {record_metadata.partition}, Offset: {record_metadata.offset}")
             except Exception as e:
-                logger.error(f"❌ Error publishing event to conductor-events: {e}", exc_info=True)
+                logger.error(f"Error publishing event to conductor-events: {e}", exc_info=True)
             
             self.kafka_producer.flush()
             
-            logger.info(f"✅ Email validation completed: {valid_count} valid, {invalid_count} invalid")
+            logger.info(f"Email validation completed: {valid_count} valid, {invalid_count} invalid")
             
         except Exception as e:
-            logger.error(f"❌ Error processing email validation: {e}", exc_info=True)
+            logger.error(f"Error processing email validation: {e}", exc_info=True)
             
             # Publish failure event
             failure_event = {
@@ -241,9 +241,9 @@ class EmailValidatorService:
                     value=failure_event
                 )
                 record_metadata = future.get(timeout=10)
-                logger.info(f"✅ Published failure event to conductor-events for workflow {workflow_id}")
+                logger.info(f"Published failure event to conductor-events for workflow {workflow_id}")
             except Exception as e:
-                logger.error(f"❌ Error publishing failure event to conductor-events: {e}", exc_info=True)
+                logger.error(f"Error publishing failure event to conductor-events: {e}", exc_info=True)
             self.kafka_producer.flush()
     
     def consume_task_events(self):
@@ -256,7 +256,7 @@ class EmailValidatorService:
             group_id=f'{SERVICE_NAME}-group'
         )
         
-        logger.info(f"🚀 {SERVICE_NAME} started - listening for email validation events")
+        logger.info(f"{SERVICE_NAME} started - listening for email validation events")
         
         for message in consumer:
             try:
@@ -267,28 +267,28 @@ class EmailValidatorService:
                     try:
                         event = json.loads(event)
                     except json.JSONDecodeError:
-                        logger.error(f"❌ Failed to parse JSON string: {event}")
+                        logger.error(f"Failed to parse JSON string: {event}")
                         continue
                 
                 event_type = event.get('eventType', 'unknown')
                 
                 if event_type == 'email_validation_request':
-                    logger.info(f"📧 Processing email validation request")
+                    logger.info(f"Processing email validation request")
                     self.process_task_event(event)
                 else:
-                    logger.warning(f"⚠️ Ignoring event type: {event_type}")
+                    logger.warning(f"Ignoring event type: {event_type}")
                     
             except Exception as e:
-                logger.error(f"💥 Error processing message: {e}", exc_info=True)
+                logger.error(f"Error processing message: {e}", exc_info=True)
 
 def main():
     """Start the Email Validator Service"""
-    logger.info(f"🚀 Starting {SERVICE_NAME} Service")
-    logger.info(f"🔌 Kafka: {KAFKA_BOOTSTRAP}")
-    logger.info(f"📦 MinIO: {MINIO_ENDPOINT}")
+    logger.info(f"Starting {SERVICE_NAME} Service")
+    logger.info(f"Kafka: {KAFKA_BOOTSTRAP}")
+    logger.info(f"MinIO: {MINIO_ENDPOINT}")
     
     # Wait for services to be ready
-    logger.info("⏳ Waiting 10 seconds for services to initialize...")
+    logger.info(" Waiting 10 seconds for services to initialize...")
     time.sleep(10)
     
     # Start service
@@ -298,11 +298,3 @@ def main():
 if __name__ == '__main__':
     main()
 
-
-
-"""Instead of this Micorservice we will use our existing services that we have already created """
-"""That wiill do the curl commmand to the airflow to trigger multiple processes that exist in a particular service"""
-"""Now Inside This service we will do the following steps:
-1. First we will do the MOVEIN -> in this we will need to push the file path to the Airflow Server
-2. Airflow will execute the process and call out the steps that are defined in the DAG
-3. MOVEOUT -> in this we will need to push the file that is processed by the Airflow Server to the MINIO Server"""

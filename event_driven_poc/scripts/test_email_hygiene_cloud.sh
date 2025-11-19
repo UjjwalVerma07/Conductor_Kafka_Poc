@@ -1,13 +1,18 @@
 #!/bin/bash
 
-function test_nameparse_cloud {
+function test_email_hygiene_cloud {
 
   # Base job details
-  jobid="1000861509"
-  metadata_url="s3://958825666686-dpservices-testing-data/conductor-poc/1000861509.WBNameParse.json"
-  stats_url="scp://abinitio@papdpsetld003l.intra.infousa.com//abi/log/UQU_${jobid}.2771.stats.jsonl"
-  execution_id="WBNameParse"
-  dagid="nua-nameparse-process-stage-v02-00-06-tiny"
+  jobid="1000876411"
+  #We will be needing the json to run the email hygiene dag 
+  metadata_url="s3://958825666686-dpservices-testing-data/conductor-poc/1000876411WBEmail_Hygiene.json"
+
+  #Similary we will be requriing stats url for the dag run
+  stats_url="scp://abinitio@papdpsetld003l.intra.infousa.com//abi/log/UQU_1000876411.32584.stats.jsonl"
+  execution_id="WBEmailHygiene"
+  dagid="nua-emailhygiene-process-stage-v01-01-04-tiny"
+
+  #Update the session token as per requirement
   session_token="dbb7b2fa-39cb-4d6a-a1ac-5ac08b23450c.CP26n15g_xdiBvBiP4i4_aD-rwA"
   # Session identifier (use first arg or fallback to PID)
   session=${1:-$$}
@@ -38,5 +43,5 @@ function test_nameparse_cloud {
 }
 
 # Run the function
-test_nameparse_cloud
+test_email_hygiene_cloud
 exit

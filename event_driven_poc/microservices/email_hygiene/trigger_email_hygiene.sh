@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # Get parameters from environment variables (set by service.py)
-JOBID="${JOBID:-1000861509}"
-METADATA_URL="${METADATA_URL:-s3://958825666686-dpservices-testing-data/conductor-poc/1000861509.WBNameParse.json}"
-EXECUTION_ID="${EXECUTION_ID:-WBNameParse}"
-DAG_ID="${DAG_ID:-nua-nameparse-process-stage-v02-00-06-tiny}"
+JOBID="${JOBID:-1000876411}"
+METADATA_URL="${METADATA_URL:-s3://958825666686-dpservices-testing-data/conductor-poc/1000876411WBEmail_Hygiene.json}"
+EXECUTION_ID="${EXECUTION_ID:-WBEmailHygiene}"
+DAG_ID="${DAG_ID:-nua-emailhygiene-process-stage-v01-01-04-tiny}"
 MWAA_ENDPOINT="${MWAA_ENDPOINT:-https://a53c6d7a-ec07-465a-9824-6cc199145a7a-vpce.c75.us-east-1.airflow.amazonaws.com:443}"
 MWAA_SESSION_TOKEN="${MWAA_SESSION_TOKEN:-dbb7b2fa-39cb-4d6a-a1ac-5ac08b23450c.CP26n15g_xdiBvBiP4i4_aD-rwA}"
-
+ 
 # Make jobid unique by appending session ID (4 digits)
 # Use SESSION_ID from environment if provided (from workflow), otherwise use process ID
 if [ -z "${SESSION_ID}" ]; then
@@ -18,7 +18,7 @@ JOBID="${JOBID}-${SESSION_ID}"
 
 # Optional stats_url (can be provided in event data if needed)
 # Default stats_url format: scp://abinitio@papdpsetld003l.intra.infousa.com//abi/log/UQU_${jobid}.2771.stats.jsonl
-STATS_URL="${STATS_URL:-scp://abinitio@papdpsetld003l.intra.infousa.com//abi/log/UQU_${ORIGINAL_JOBID}.2771.stats.jsonl}"
+STATS_URL="${STATS_URL:-scp://abinitio@papdpsetld003l.intra.infousa.com//abi/log/UQU_1000876411.32584.stats.jsonl}"
 
 # Log to stderr (so it doesn't interfere with JSON output)
 echo "Triggering Airflow DAG: ${DAG_ID}" >&2
